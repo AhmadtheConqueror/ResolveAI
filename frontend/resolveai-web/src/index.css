@@ -1155,6 +1155,341 @@ select:disabled {
   }
 }
 
+/* ─── AI Analysis Panel ──────────────────────────────────────────────── */
+
+.ai-panel {
+  background: linear-gradient(
+    160deg,
+    #f5f8ff 0%,
+    #ffffff 60%
+  );
+  border: 1px solid #c7d6f7;
+}
+
+.ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.ai-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-panel-title h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ai-panel-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  color: #ffffff;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Run AI button */
+.ai-run-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  height: 38px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  background: linear-gradient(90deg, #2563eb 0%, #7c3aed 100%);
+  cursor: pointer;
+  border: 0;
+  transition: opacity 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+}
+
+.ai-run-button:hover:not(:disabled) {
+  opacity: 0.9;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+.ai-run-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Running state */
+.ai-running {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  font-size: 13.5px;
+  color: #1d4ed8;
+  margin-bottom: 8px;
+}
+
+.ai-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2.5px solid #bfdbfe;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: ai-spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Empty / loading placeholder */
+.ai-empty {
+  padding: 28px 0 8px;
+  color: var(--muted);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+/* Context snapshot row */
+.ai-context-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.ai-context-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #f1f5fd;
+  border: 1px solid #dce8fb;
+  min-width: 140px;
+}
+
+.ai-context-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.ai-context-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Recommendations grid */
+.ai-reco-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.ai-reco-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(22, 32, 50, 0.05);
+}
+
+.ai-reco-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.ai-reco-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Priority / urgency chips inside reco cards */
+.priority-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  width: fit-content;
+}
+
+/* Confidence bar */
+.ai-confidence {
+  gap: 8px;
+}
+
+.ai-confidence-bar-track {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.ai-confidence-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #2563eb, #7c3aed);
+  transition: width 0.4s ease;
+}
+
+/* Text sections */
+.ai-section {
+  margin-bottom: 20px;
+}
+
+.ai-section-heading {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+.ai-body {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* Suggested actions */
+.ai-actions-list {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-actions-list li {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+/* Human-review disclaimer */
+.ai-disclaimer {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  font-size: 13px;
+  font-weight: 600;
+  color: #92400e;
+  margin-top: 4px;
+  margin-bottom: 20px;
+}
+
+/* Analysis history collapsible */
+.ai-history {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.ai-history-toggle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.ai-history-toggle::before {
+  content: "▶";
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+details[open] .ai-history-toggle::before {
+  transform: rotate(90deg);
+}
+
+.ai-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-history-item {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-history-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--muted);
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ai-history-row {
+  display: flex;
+  gap: 18px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+/* Responsive: collapse reco grid on small screens */
+@media (max-width: 860px) {
+  .ai-reco-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ─── Original responsive rules ─────────────────────────────────────── */
+
 @media (max-width: 640px) {
   .login-card {
     padding: 28px 22px;
@@ -1230,5 +1565,19 @@ select:disabled {
   .modal-actions .primary-button,
   .modal-actions .secondary-button {
     width: 100%;
+  }
+
+  .ai-reco-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ai-panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ai-run-button {
+    width: 100%;
+    justify-content: center;
   }
 }

@@ -288,6 +288,12 @@ export default function IncidentDetailsPage() {
   const [commentText, setCommentText] = useState("");
   const [postingComment, setPostingComment] = useState(false);
 
+  // AI Analysis state
+  const [aiAnalyses, setAiAnalyses] = useState<IncidentAIAnalysis[]>([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [runningAnalysis, setRunningAnalysis] = useState(false);
+  const [aiNotice, setAiNotice] = useState<UiNotice | null>(null);
+
   const handleUnauthorized = useCallback(() => {
     sessionStorage.clear();
     navigate("/", { replace: true });
@@ -307,6 +313,27 @@ export default function IncidentDetailsPage() {
     setComments(commentData);
     setSelectedTechnicianId(incidentData.assignedTo?.id ?? "");
   }, [id]);
+
+  const loadAIAnalyses = useCallback(async () => {
+    if (!id) {
+      return;
+    }
+
+    setAiLoading(true);
+
+    try {
+      const data = await getIncidentAIAnalyses(id);
+      setAiAnalyses(data);
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      // Silently skip forbidden (Employee may not see AI history per RBAC)
+    } finally {
+      setAiLoading(false);
+    }
+  }, [handleUnauthorized, id]);
 
   const loadIncident = useCallback(async () => {
     if (!id) {
@@ -367,7 +394,8 @@ export default function IncidentDetailsPage() {
     }
 
     void Promise.resolve().then(loadIncident);
-  }, [handleUnauthorized, loadIncident, user]);
+    void Promise.resolve().then(loadAIAnalyses);
+  }, [handleUnauthorized, loadIncident, loadAIAnalyses, user]);
 
   useEffect(() => {
     if (!user || !isManagerOrAdmin(user.role)) {
@@ -539,6 +567,39 @@ export default function IncidentDetailsPage() {
       });
     } finally {
       setPostingComment(false);
+    }
+  }
+
+  async function handleRunAIAnalysis() {
+    if (!id) {
+      return;
+    }
+
+    setRunningAnalysis(true);
+    setAiNotice(null);
+
+    try {
+      const result = await runIncidentAIAnalysis(id);
+      setAiAnalyses((prev) => [result, ...prev]);
+      setAiNotice({
+        tone: "success",
+        message: "AI analysis complete. Review recommendations below.",
+      });
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+
+      setAiNotice({
+        tone: "error",
+        message:
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "AI analysis is temporarily unavailable. Please try again.",
+      });
+    } finally {
+      setRunningAnalysis(false);
     }
   }
 
@@ -990,6 +1051,223 @@ export default function IncidentDetailsPage() {
                         Comments are unavailable for this incident.
                       </p>
                     )}
+                  </section>
+
+                  {/* ── AI Analysis Panel ── */}
+                  <section className="detail-card detail-card-wide ai-panel">
+                    <div className="ai-panel-header">
+                      <div className="ai-panel-title">
+                        <span className="ai-panel-icon" aria-hidden="true">
+                          ✦
+                        </span>
+                        <h2>ResolveAI&nbsp;AI&nbsp;Analysis</h2>
+                      </div>
+
+                      {user && canRunAIAnalysis(user, incident) && (
+                        <button
+                          id="run-ai-analysis-btn"
+                          type="button"
+                          className="ai-run-button"
+                          disabled={runningAnalysis || aiLoading}
+                          onClick={() => void handleRunAIAnalysis()}
+                        >
+                          {runningAnalysis
+                            ? "Analyzing…"
+                            : "Analyze with AI"}
+                        </button>
+                      )}
+                    </div>
+
+                    {aiNotice && (
+                      <div
+                        className={`inline-notice ${aiNotice.tone}`}
+                        role="status"
+                      >
+                        {aiNotice.message}
+                      </div>
+                    )}
+
+                    {runningAnalysis && (
+                      <div className="ai-running">
+                        <span className="ai-spinner" aria-hidden="true" />
+                        Running AI analysis — this may take a few seconds…
+                      </div>
+                    )}
+
+                    {!runningAnalysis && aiLoading && (
+                      <div className="ai-empty">Loading analysis history…</div>
+                    )}
+
+                    {!runningAnalysis && !aiLoading && aiAnalyses.length === 0 && (
+                      <div className="ai-empty">
+                        No analysis yet.
+                        {user && canRunAIAnalysis(user, incident)
+                          ? " Click \"Analyze with AI\" to generate recommendations."
+                          : ""}
+                      </div>
+                    )}
+
+                    {!runningAnalysis && aiAnalyses.length > 0 && (() => {
+                      const latest = aiAnalyses[0];
+                      return (
+                        <>
+                          {/* Context snapshot */}
+                          <div className="ai-context-row">
+                            <div className="ai-context-block">
+                              <span className="ai-context-label">
+                                Current category
+                              </span>
+                              <span className="ai-context-value">
+                                {incident.category}
+                              </span>
+                            </div>
+
+                            <div className="ai-context-block">
+                              <span className="ai-context-label">
+                                Current priority
+                              </span>
+                              <span className="ai-context-value">
+                                {incident.priority.name}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Recommendations grid */}
+                          <div className="ai-reco-grid">
+                            <div className="ai-reco-card">
+                              <span className="ai-reco-label">Category</span>
+                              <span className="ai-reco-value">
+                                {latest.categoryRecommendation}
+                              </span>
+                            </div>
+
+                            <div className="ai-reco-card">
+                              <span className="ai-reco-label">Priority</span>
+                              <span
+                                className={`ai-reco-value priority-chip ${getBadgeClass(
+                                  "priority",
+                                  latest.priorityRecommendation
+                                )}`}
+                              >
+                                {latest.priorityRecommendation}
+                              </span>
+                            </div>
+
+                            <div className="ai-reco-card">
+                              <span className="ai-reco-label">Urgency</span>
+                              <span
+                                className={`ai-reco-value priority-chip ${getBadgeClass(
+                                  "priority",
+                                  latest.urgency
+                                )}`}
+                              >
+                                {latest.urgency}
+                              </span>
+                            </div>
+
+                            <div className="ai-reco-card">
+                              <span className="ai-reco-label">Confidence</span>
+                              <span className="ai-reco-value ai-confidence">
+                                {formatPercent(latest.confidence)}
+                                <span
+                                  className="ai-confidence-bar-track"
+                                  aria-hidden="true"
+                                >
+                                  <span
+                                    className="ai-confidence-bar-fill"
+                                    style={{
+                                      width: formatPercent(latest.confidence),
+                                    }}
+                                  />
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Possible cause */}
+                          <div className="ai-section">
+                            <h3 className="ai-section-heading">Possible Cause</h3>
+                            <p className="ai-body">{latest.possibleCause}</p>
+                          </div>
+
+                          {/* Reasoning */}
+                          <div className="ai-section">
+                            <h3 className="ai-section-heading">Reasoning</h3>
+                            <p className="ai-body">{latest.reasoningSummary}</p>
+                          </div>
+
+                          {/* Suggested actions */}
+                          <div className="ai-section">
+                            <h3 className="ai-section-heading">
+                              Suggested Actions
+                            </h3>
+                            <ol className="ai-actions-list">
+                              {latest.suggestedActions.map((action, index) => (
+                                <li key={index}>{action}</li>
+                              ))}
+                            </ol>
+                          </div>
+
+                          {/* Human-in-the-loop disclaimer */}
+                          <div className="ai-disclaimer" role="note">
+                            ⚠ AI-generated recommendation. Human review
+                            required before applying any changes.
+                          </div>
+
+                          {/* Analysis history */}
+                          {aiAnalyses.length > 1 && (
+                            <details className="ai-history">
+                              <summary className="ai-history-toggle">
+                                Analysis history ({aiAnalyses.length - 1} older
+                                {aiAnalyses.length - 1 === 1
+                                  ? " run"
+                                  : " runs"})
+                              </summary>
+
+                              <ol className="ai-history-list">
+                                {aiAnalyses.slice(1).map((analysis) => (
+                                  <li
+                                    key={analysis.id}
+                                    className="ai-history-item"
+                                  >
+                                    <div className="ai-history-meta">
+                                      <span>
+                                        {formatDate(analysis.createdAt)}
+                                      </span>
+                                      <span>
+                                        {analysis.provider} /{" "}
+                                        {analysis.model}
+                                      </span>
+                                    </div>
+
+                                    <div className="ai-history-row">
+                                      <span>
+                                        Category:{" "}
+                                        <strong>
+                                          {analysis.categoryRecommendation}
+                                        </strong>
+                                      </span>
+                                      <span>
+                                        Priority:{" "}
+                                        <strong>
+                                          {analysis.priorityRecommendation}
+                                        </strong>
+                                      </span>
+                                      <span>
+                                        Confidence:{" "}
+                                        <strong>
+                                          {formatPercent(analysis.confidence)}
+                                        </strong>
+                                      </span>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ol>
+                            </details>
+                          )}
+                        </>
+                      );
+                    })()}
                   </section>
                 </div>
               </>
