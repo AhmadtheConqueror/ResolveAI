@@ -108,7 +108,11 @@ public class GeminiIncidentService : IAIIncidentService
 
             if (!response.IsSuccessStatusCode)
             {
-                LogProviderFailure(response.StatusCode);
+                await LogProviderFailureAsync(
+                    response,
+                    model,
+                    cancellationToken
+                );
 
                 throw new AIIncidentAnalysisException(
                     "Gemini returned an unsuccessful response."
@@ -134,7 +138,10 @@ public class GeminiIncidentService : IAIIncidentService
         catch (OperationCanceledException) when
             (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("Gemini incident analysis timed out.");
+            _logger.LogWarning(
+                "Gemini incident analysis timed out. Model={Model}.",
+                model
+            );
 
             throw new AIIncidentAnalysisException(
                 "Gemini incident analysis timed out."
@@ -144,7 +151,8 @@ public class GeminiIncidentService : IAIIncidentService
         {
             _logger.LogWarning(
                 exception,
-                "Gemini incident analysis request failed."
+                "Gemini incident analysis HTTP request failed. Model={Model}.",
+                model
             );
 
             throw new AIIncidentAnalysisException(
@@ -156,7 +164,8 @@ public class GeminiIncidentService : IAIIncidentService
         {
             _logger.LogWarning(
                 exception,
-                "Gemini returned invalid incident analysis JSON."
+                "Gemini returned invalid incident analysis JSON. Model={Model}.",
+                model
             );
 
             throw new AIIncidentAnalysisException(
@@ -199,7 +208,6 @@ public class GeminiIncidentService : IAIIncidentService
         return new Dictionary<string, object?>
         {
             ["type"] = "object",
-            ["additionalProperties"] = false,
             ["properties"] = new Dictionary<string, object?>
             {
                 ["categoryRecommendation"] = new Dictionary<string, object?>
@@ -462,19 +470,47 @@ public class GeminiIncidentService : IAIIncidentService
         return actions;
     }
 
-    private void LogProviderFailure(HttpStatusCode statusCode)
+    private async Task LogProviderFailureAsync(
+        HttpResponseMessage response,
+        string model,
+        CancellationToken cancellationToken)
     {
+        var statusCode = response.StatusCode;
+
         if (statusCode == HttpStatusCode.TooManyRequests)
         {
             _logger.LogWarning(
-                "Gemini incident analysis was rate limited."
+                "Gemini incident analysis was rate limited. Model={Model}.",
+                model
             );
             return;
         }
 
+        string? errorBody = null;
+
+        try
+        {
+            var raw = await response.Content.ReadAsStringAsync(
+                cancellationToken
+            );
+
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                // Truncate to avoid log flooding; never log secrets
+                errorBody = raw.Length <= 600 ? raw : raw[..600] + "…";
+            }
+        }
+        catch
+        {
+            // Best-effort only
+        }
+
         _logger.LogWarning(
-            "Gemini incident analysis returned HTTP {StatusCode}.",
-            (int)statusCode
+            "Gemini incident analysis returned HTTP {StatusCode}. " +
+            "Model={Model}. ResponseBody={Body}",
+            (int)statusCode,
+            model,
+            errorBody ?? "(empty)"
         );
     }
 

@@ -27,7 +27,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
             client.BaseAddress = new Uri(
                 "https://generativelanguage.googleapis.com"
             );
-            client.Timeout = TimeSpan.FromSeconds(20);
+            client.Timeout = TimeSpan.FromSeconds(90);
         });
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException("JWT key is not configured.");
