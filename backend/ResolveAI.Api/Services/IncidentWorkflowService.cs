@@ -125,6 +125,12 @@ public class IncidentWorkflowService
         incident.Status = requestedStatus;
         incident.UpdatedAt = timestamp;
 
+        if (requestedStatus != IncidentStatus.Open &&
+            incident.FirstRespondedAt is null)
+        {
+            incident.FirstRespondedAt = timestamp;
+        }
+
         if (requestedStatus == IncidentStatus.Resolved &&
             incident.ResolvedAt is null)
         {

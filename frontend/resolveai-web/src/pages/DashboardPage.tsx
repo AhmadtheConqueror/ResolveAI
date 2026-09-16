@@ -41,6 +41,38 @@ function getBadgeClass(prefix: string, value: string) {
   return `${prefix}-${slug || "default"}`;
 }
 
+function formatSlaStatus(status: string) {
+  switch (status) {
+    case "OnTrack":
+      return "On Track";
+    case "AtRisk":
+      return "At Risk";
+    case "Breached":
+      return "Breached";
+    case "Met":
+      return "Met";
+    case "NotApplicable":
+      return "N/A";
+    default:
+      return status;
+  }
+}
+
+function getSlaBadgeClass(status: string) {
+  switch (status) {
+    case "OnTrack":
+      return "sla-on-track";
+    case "AtRisk":
+      return "sla-at-risk";
+    case "Breached":
+      return "sla-breached";
+    case "Met":
+      return "sla-met";
+    default:
+      return "sla-na";
+  }
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
 
@@ -109,10 +141,35 @@ export default function DashboardPage() {
         incident.priority.toLowerCase() === "critical"
     ).length;
 
+    const resolvedWithSla = incidents.filter(
+      (incident) =>
+        ["resolved", "closed"].includes(
+          incident.status.toLowerCase()
+        ) &&
+        incident.sla &&
+        incident.sla.resolutionStatus !== "NotApplicable"
+    );
+
+    const metCount = resolvedWithSla.filter(
+      (incident) => incident.sla?.resolutionStatus === "Met"
+    ).length;
+
+    const totalResolved = resolvedWithSla.length;
+    const slaSuccessRate =
+      totalResolved > 0
+        ? `${Math.round((metCount / totalResolved) * 100)}%`
+        : "N/A";
+    const slaSuccessDetail =
+      totalResolved > 0
+        ? `${metCount} of ${totalResolved} resolved within target`
+        : "No resolved incidents";
+
     return {
       total: incidents.length,
       open,
       critical,
+      slaSuccessRate,
+      slaSuccessDetail,
     };
   }, [incidents]);
 
@@ -230,8 +287,8 @@ export default function DashboardPage() {
 
             <div className="kpi-card">
               <span>SLA Success</span>
-              <strong>N/A</strong>
-              <small>Coming soon</small>
+              <strong>{kpis.slaSuccessRate}</strong>
+              <small>{kpis.slaSuccessDetail}</small>
             </div>
           </section>
 
@@ -278,6 +335,7 @@ export default function DashboardPage() {
                         <th>Category</th>
                         <th>Priority</th>
                         <th>Status</th>
+                        <th>SLA</th>
                         <th>Created Date</th>
                       </tr>
                     </thead>
@@ -320,6 +378,34 @@ export default function DashboardPage() {
                             >
                               {incident.status}
                             </span>
+                          </td>
+
+                          <td>
+                            {incident.sla ? (
+                              <div className="sla-table-cell">
+                                <span
+                                  className={`badge sla-badge ${getSlaBadgeClass(
+                                    incident.sla.overallStatus
+                                  )}`}
+                                >
+                                  {formatSlaStatus(
+                                    incident.sla.overallStatus
+                                  )}
+                                </span>
+                                {incident.sla.requiresEscalation && (
+                                  <span
+                                    className="sla-escalation-tag"
+                                    title="Escalation Required: SLA Breached"
+                                  >
+                                    Escalate
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="badge sla-badge sla-na">
+                                N/A
+                              </span>
+                            )}
                           </td>
 
                           <td>{formatDate(incident.createdAt)}</td>

@@ -53,6 +53,7 @@ export type Incident = {
   priority: string;
   createdAt: string;
   updatedAt?: string;
+  firstRespondedAt?: string | null;
   reporter?: {
     id: string;
     name: string;
@@ -61,6 +62,43 @@ export type Incident = {
     id: string;
     name: string;
   } | null;
+  sla?: IncidentSlaCompact;
+};
+
+export type SlaStatus =
+  | "OnTrack"
+  | "AtRisk"
+  | "Breached"
+  | "Met"
+  | "NotApplicable";
+
+export type IncidentSlaCompact = {
+  overallStatus: SlaStatus | string;
+  responseStatus: SlaStatus | string;
+  resolutionStatus: SlaStatus | string;
+  responseDueAt: string | null;
+  resolutionDueAt: string | null;
+  requiresEscalation: boolean;
+};
+
+export type IncidentSla = {
+  responseTargetMinutes: number;
+  resolutionTargetMinutes: number;
+  responseDueAt: string | null;
+  resolutionDueAt: string | null;
+  firstRespondedAt: string | null;
+  resolvedAt: string | null;
+  responseBreached: boolean;
+  resolutionBreached: boolean;
+  overallBreached: boolean;
+  responseRemainingMinutes: number | null;
+  resolutionRemainingMinutes: number | null;
+  responseOverdueMinutes: number | null;
+  resolutionOverdueMinutes: number | null;
+  responseStatus: SlaStatus | string;
+  resolutionStatus: SlaStatus | string;
+  overallStatus: SlaStatus | string;
+  requiresEscalation: boolean;
 };
 
 export type IncidentPerson = {
@@ -85,8 +123,10 @@ export type IncidentDetail = {
   resolution: string | null;
   createdAt: string;
   updatedAt: string;
+  firstRespondedAt: string | null;
   resolvedAt: string | null;
   closedAt: string | null;
+  sla?: IncidentSla;
 };
 
 export type TechnicianUser = {
@@ -140,6 +180,11 @@ export type IncidentAIAnalysis = {
   priorityApplied?: boolean;
   appliedAt?: string | null;
   appliedByUserId?: string | null;
+  appliedByUser?: {
+    id: string;
+    name: string;
+    email?: string;
+  } | null;
 };
 
 export type IncidentOption = {

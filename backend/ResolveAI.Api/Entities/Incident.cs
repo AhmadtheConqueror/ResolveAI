@@ -36,6 +36,8 @@ public class Incident
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    public DateTime? FirstRespondedAt { get; set; }
+
     public DateTime? ResolvedAt { get; set; }
 
     public DateTime? ClosedAt { get; set; }

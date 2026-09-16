@@ -21,6 +21,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     builder.Services.AddScoped<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>();
     builder.Services.AddScoped<ITokenService, TokenService>();
     builder.Services.AddScoped<IncidentWorkflowService>();
+    builder.Services.AddScoped<ISlaService, SlaService>();
     builder.Services
         .AddHttpClient<IAIIncidentService, GeminiIncidentService>(client =>
         {

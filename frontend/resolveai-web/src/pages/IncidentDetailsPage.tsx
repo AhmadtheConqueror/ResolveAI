@@ -21,6 +21,7 @@ import type {
   IncidentAIAnalysis,
   IncidentComment,
   IncidentDetail,
+  IncidentSla,
   IncidentStatus,
   TechnicianUser,
 } from "../api/api";
@@ -98,6 +99,103 @@ function getBadgeClass(prefix: string, value: string) {
     .replace(/(^-|-$)/g, "");
 
   return `${prefix}-${slug || "default"}`;
+}
+
+function formatSlaStatus(status: string) {
+  switch (status) {
+    case "OnTrack":
+      return "On Track";
+    case "AtRisk":
+      return "At Risk";
+    case "Breached":
+      return "Breached";
+    case "Met":
+      return "Met";
+    case "NotApplicable":
+      return "N/A";
+    default:
+      return status;
+  }
+}
+
+function getSlaBadgeClass(status: string) {
+  switch (status) {
+    case "OnTrack":
+      return "sla-on-track";
+    case "AtRisk":
+      return "sla-at-risk";
+    case "Breached":
+      return "sla-breached";
+    case "Met":
+      return "sla-met";
+    default:
+      return "sla-na";
+  }
+}
+
+function formatTargetDuration(minutes: number) {
+  if (minutes < 60) {
+    return `${minutes} minutes`;
+  }
+  const hours = minutes / 60;
+  if (hours % 24 === 0 && hours >= 24) {
+    const days = hours / 24;
+    return `${days} day${days > 1 ? "s" : ""} (${hours} hours)`;
+  }
+  return `${hours} hour${hours > 1 ? "s" : ""}`;
+}
+
+function formatMinutesHuman(minutes: number) {
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function getResponseStatusDescription(sla: IncidentSla) {
+  if (sla.responseStatus === "Met") {
+    return "Met within target";
+  }
+  if (sla.responseStatus === "Breached") {
+    return sla.responseOverdueMinutes != null
+      ? `Breached (${formatMinutesHuman(sla.responseOverdueMinutes)} overdue)`
+      : "Breached";
+  }
+  if (sla.responseStatus === "AtRisk") {
+    return sla.responseRemainingMinutes != null
+      ? `At Risk (${formatMinutesHuman(sla.responseRemainingMinutes)} remaining)`
+      : "At Risk";
+  }
+  if (sla.responseStatus === "OnTrack") {
+    return sla.responseRemainingMinutes != null
+      ? `On Track (${formatMinutesHuman(sla.responseRemainingMinutes)} remaining)`
+      : "On Track";
+  }
+  return "N/A";
+}
+
+function getResolutionStatusDescription(sla: IncidentSla) {
+  if (sla.resolutionStatus === "Met") {
+    return "Met within target";
+  }
+  if (sla.resolutionStatus === "Breached") {
+    return sla.resolutionOverdueMinutes != null
+      ? `Breached (${formatMinutesHuman(sla.resolutionOverdueMinutes)} overdue)`
+      : "Breached";
+  }
+  if (sla.resolutionStatus === "AtRisk") {
+    return sla.resolutionRemainingMinutes != null
+      ? `At Risk (${formatMinutesHuman(sla.resolutionRemainingMinutes)} remaining)`
+      : "At Risk";
+  }
+  if (sla.resolutionStatus === "OnTrack") {
+    return sla.resolutionRemainingMinutes != null
+      ? `On Track (${formatMinutesHuman(sla.resolutionRemainingMinutes)} remaining)`
+      : "On Track";
+  }
+  return "N/A";
 }
 
 function isManagerOrAdmin(role?: string | null) {
@@ -799,6 +897,26 @@ export default function IncidentDetailsPage() {
                   </div>
                 </header>
 
+                {incident.sla?.requiresEscalation && (
+                  <div className="escalation-banner" role="alert">
+                    <div className="escalation-banner-icon" aria-hidden="true">
+                      ⚠
+                    </div>
+                    <div className="escalation-banner-content">
+                      <strong>SLA Breached — Escalation Required</strong>
+                      <span>
+                        This incident has breached its agreed service level targets
+                        {incident.sla.responseBreached && incident.sla.resolutionBreached
+                          ? " (both response and resolution deadlines exceeded)"
+                          : incident.sla.responseBreached
+                            ? " (response deadline exceeded)"
+                            : " (resolution deadline exceeded)"}
+                        . Priority management oversight and remediation are required.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="details-grid">
                   <section className="detail-card detail-card-wide workflow-card">
                     <div className="workflow-header">
@@ -988,6 +1106,137 @@ export default function IncidentDetailsPage() {
                     </div>
                   </section>
 
+                  <section className="detail-card detail-card-wide sla-detail-card">
+                    <div className="sla-card-header">
+                      <div>
+                        <h2>Service Level Agreement (SLA)</h2>
+                        <p>
+                          Target response and resolution times based on priority ({incident.priority.name})
+                        </p>
+                      </div>
+
+                      {incident.sla && (
+                        <span
+                          className={`badge sla-badge ${getSlaBadgeClass(
+                            incident.sla.overallStatus
+                          )}`}
+                        >
+                          Overall: {formatSlaStatus(incident.sla.overallStatus)}
+                        </span>
+                      )}
+                    </div>
+
+                    {incident.sla ? (
+                      <div className="sla-grid">
+                        <div className="sla-target-block">
+                          <div className="sla-target-title">
+                            <span>Response SLA</span>
+                            <span
+                              className={`badge sla-badge ${getSlaBadgeClass(
+                                incident.sla.responseStatus
+                              )}`}
+                            >
+                              {formatSlaStatus(incident.sla.responseStatus)}
+                            </span>
+                          </div>
+
+                          <dl className="sla-meta-list">
+                            <div>
+                              <dt>Target Window</dt>
+                              <dd>
+                                {formatTargetDuration(
+                                  incident.sla.responseTargetMinutes
+                                )}
+                              </dd>
+                            </div>
+
+                            <div>
+                              <dt>Due By</dt>
+                              <dd>{formatDate(incident.sla.responseDueAt)}</dd>
+                            </div>
+
+                            <div>
+                              <dt>Responded At</dt>
+                              <dd>
+                                {incident.sla.firstRespondedAt
+                                  ? formatDate(incident.sla.firstRespondedAt)
+                                  : "Pending (awaiting triage)"}
+                              </dd>
+                            </div>
+
+                            <div>
+                              <dt>Status Detail</dt>
+                              <dd
+                                className={
+                                  incident.sla.responseBreached
+                                    ? "text-danger"
+                                    : ""
+                                }
+                              >
+                                {getResponseStatusDescription(incident.sla)}
+                              </dd>
+                            </div>
+                          </dl>
+                        </div>
+
+                        <div className="sla-target-block">
+                          <div className="sla-target-title">
+                            <span>Resolution SLA</span>
+                            <span
+                              className={`badge sla-badge ${getSlaBadgeClass(
+                                incident.sla.resolutionStatus
+                              )}`}
+                            >
+                              {formatSlaStatus(incident.sla.resolutionStatus)}
+                            </span>
+                          </div>
+
+                          <dl className="sla-meta-list">
+                            <div>
+                              <dt>Target Window</dt>
+                              <dd>
+                                {formatTargetDuration(
+                                  incident.sla.resolutionTargetMinutes
+                                )}
+                              </dd>
+                            </div>
+
+                            <div>
+                              <dt>Due By</dt>
+                              <dd>{formatDate(incident.sla.resolutionDueAt)}</dd>
+                            </div>
+
+                            <div>
+                              <dt>Resolved At</dt>
+                              <dd>
+                                {incident.sla.resolvedAt
+                                  ? formatDate(incident.sla.resolvedAt)
+                                  : "In Progress"}
+                              </dd>
+                            </div>
+
+                            <div>
+                              <dt>Status Detail</dt>
+                              <dd
+                                className={
+                                  incident.sla.resolutionBreached
+                                    ? "text-danger"
+                                    : ""
+                                }
+                              >
+                                {getResolutionStatusDescription(incident.sla)}
+                              </dd>
+                            </div>
+                          </dl>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="muted-copy">
+                        No SLA configuration available.
+                      </p>
+                    )}
+                  </section>
+
                   <section className="detail-card detail-card-wide">
                     <h2>Resolution</h2>
                     <p className="detail-body">
@@ -1009,6 +1258,13 @@ export default function IncidentDetailsPage() {
                         <dt>Updated</dt>
                         <dd>{formatDate(incident.updatedAt)}</dd>
                       </div>
+
+                      {incident.firstRespondedAt && (
+                        <div>
+                          <dt>First Response</dt>
+                          <dd>{formatDate(incident.firstRespondedAt)}</dd>
+                        </div>
+                      )}
 
                       {incident.resolvedAt && (
                         <div>
@@ -1123,7 +1379,7 @@ export default function IncidentDetailsPage() {
                         <span className="ai-panel-icon" aria-hidden="true">
                           ✦
                         </span>
-                        <h2>ResolveAI&nbsp;AI&nbsp;Analysis</h2>
+                        <h2>ResolveAI&nbsp;Analysis</h2>
                       </div>
 
                       {user && canRunAIAnalysis(user, incident) && (
@@ -1216,9 +1472,21 @@ export default function IncidentDetailsPage() {
 
                               <div className="ai-reco-action-row">
                                 {latest.categoryApplied ? (
-                                  <span className="ai-applied-badge">
-                                    <span className="check-icon" aria-hidden="true">✓</span> Applied by human
-                                  </span>
+                                  <div className="ai-applied-group">
+                                    <span className="ai-applied-badge">
+                                      <span className="check-icon" aria-hidden="true">✓</span> Approved & Applied
+                                    </span>
+                                    {latest.appliedByUser?.name && (
+                                      <span className="ai-applied-meta">
+                                        Approved by {latest.appliedByUser.name}
+                                      </span>
+                                    )}
+                                    {latest.appliedAt && (
+                                      <span className="ai-applied-meta">
+                                        Applied {formatDate(latest.appliedAt)}
+                                      </span>
+                                    )}
+                                  </div>
                                 ) : isCategoryMatchingCurrent ? (
                                   <span className="ai-matches-notice">
                                     Already matches current value
@@ -1254,9 +1522,21 @@ export default function IncidentDetailsPage() {
 
                               <div className="ai-reco-action-row">
                                 {latest.priorityApplied ? (
-                                  <span className="ai-applied-badge">
-                                    <span className="check-icon" aria-hidden="true">✓</span> Applied by human
-                                  </span>
+                                  <div className="ai-applied-group">
+                                    <span className="ai-applied-badge">
+                                      <span className="check-icon" aria-hidden="true">✓</span> Approved & Applied
+                                    </span>
+                                    {latest.appliedByUser?.name && (
+                                      <span className="ai-applied-meta">
+                                        Approved by {latest.appliedByUser.name}
+                                      </span>
+                                    )}
+                                    {latest.appliedAt && (
+                                      <span className="ai-applied-meta">
+                                        Applied {formatDate(latest.appliedAt)}
+                                      </span>
+                                    )}
+                                  </div>
                                 ) : isPriorityMatchingCurrent ? (
                                   <span className="ai-matches-notice">
                                     Already matches current value
@@ -1390,13 +1670,28 @@ export default function IncidentDetailsPage() {
                                     <div className="ai-history-governance">
                                       {analysis.categoryApplied ||
                                       analysis.priorityApplied ? (
-                                        <span className="ai-history-applied">
-                                          Applied:{" "}
-                                          {analysis.categoryApplied &&
-                                            "Category ✓ "}
-                                          {analysis.priorityApplied &&
-                                            "Priority ✓"}
-                                        </span>
+                                        <div className="ai-history-audit">
+                                          <span className="ai-history-applied">
+                                            ✓ Approved & Applied (
+                                            {analysis.categoryApplied &&
+                                            analysis.priorityApplied
+                                              ? "Category & Priority"
+                                              : analysis.categoryApplied
+                                                ? "Category"
+                                                : "Priority"}
+                                            )
+                                          </span>
+                                          {analysis.appliedByUser?.name && (
+                                            <span className="ai-history-audit-meta">
+                                              Approved by {analysis.appliedByUser.name}
+                                            </span>
+                                          )}
+                                          {analysis.appliedAt && (
+                                            <span className="ai-history-audit-meta">
+                                              Applied {formatDate(analysis.appliedAt)}
+                                            </span>
+                                          )}
+                                        </div>
                                       ) : (
                                         <span className="ai-history-not-applied">
                                           Not applied

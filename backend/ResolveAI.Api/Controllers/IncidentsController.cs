@@ -19,15 +19,18 @@ public class IncidentsController : ControllerBase
     private readonly AppDbContext _context;
     private readonly IncidentWorkflowService _workflow;
     private readonly IAIIncidentService _aiIncidentService;
+    private readonly ISlaService _slaService;
 
     public IncidentsController(
         AppDbContext context,
         IncidentWorkflowService workflow,
-        IAIIncidentService aiIncidentService)
+        IAIIncidentService aiIncidentService,
+        ISlaService slaService)
     {
         _context = context;
         _workflow = workflow;
         _aiIncidentService = aiIncidentService;
+        _slaService = slaService;
     }
 
     [HttpGet("options")]
@@ -101,7 +104,7 @@ public class IncidentsController : ControllerBase
             return Forbid();
         }
 
-        var incidents = await query
+        var rawIncidents = await query
             .OrderByDescending(i => i.CreatedAt)
             .Select(i => new
             {
@@ -128,9 +131,46 @@ public class IncidentsController : ControllerBase
                     },
 
                 createdAt = i.CreatedAt,
-                updatedAt = i.UpdatedAt
+                updatedAt = i.UpdatedAt,
+                firstRespondedAt = i.FirstRespondedAt,
+                resolvedAt = i.ResolvedAt,
+                closedAt = i.ClosedAt
             })
             .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        var incidents = rawIncidents.Select(i =>
+        {
+            var sla = _slaService.CalculateDetail(
+                i.createdAt,
+                i.priority,
+                i.firstRespondedAt,
+                i.resolvedAt,
+                now);
+
+            return new
+            {
+                id = i.id,
+                incidentNumber = i.incidentNumber,
+                title = i.title,
+                status = i.status,
+                category = i.category,
+                priority = i.priority,
+                reporter = i.reporter,
+                assignedTo = i.assignedTo,
+                createdAt = i.createdAt,
+                updatedAt = i.updatedAt,
+                sla = new
+                {
+                    overallStatus = sla.OverallStatus,
+                    responseStatus = sla.ResponseStatus,
+                    resolutionStatus = sla.ResolutionStatus,
+                    responseDueAt = sla.ResponseDueAt,
+                    resolutionDueAt = sla.ResolutionDueAt,
+                    requiresEscalation = sla.RequiresEscalation
+                }
+            };
+        });
 
         return Ok(incidents);
     }
@@ -202,8 +242,10 @@ public class IncidentsController : ControllerBase
             resolution = incident.Resolution,
             createdAt = incident.CreatedAt,
             updatedAt = incident.UpdatedAt,
+            firstRespondedAt = incident.FirstRespondedAt,
             resolvedAt = incident.ResolvedAt,
-            closedAt = incident.ClosedAt
+            closedAt = incident.ClosedAt,
+            sla = _slaService.CalculateDetail(incident)
         });
     }
 
@@ -369,6 +411,7 @@ public class IncidentsController : ControllerBase
             id = incident.Id,
             status = incident.Status.ToString(),
             updatedAt = incident.UpdatedAt,
+            firstRespondedAt = incident.FirstRespondedAt,
             resolvedAt = incident.ResolvedAt,
             closedAt = incident.ClosedAt
         });
@@ -620,6 +663,7 @@ public class IncidentsController : ControllerBase
 
         var analyses = await _context.IncidentAIAnalyses
             .AsNoTracking()
+            .Include(a => a.AppliedByUser)
             .Where(a => a.IncidentId == id)
             .OrderByDescending(a => a.CreatedAt)
             .ToListAsync();
@@ -916,7 +960,15 @@ public class IncidentsController : ControllerBase
             categoryApplied = analysis.CategoryApplied,
             priorityApplied = analysis.PriorityApplied,
             appliedAt = analysis.AppliedAt,
-            appliedByUserId = analysis.AppliedByUserId
+            appliedByUserId = analysis.AppliedByUserId,
+            appliedByUser = analysis.AppliedByUser == null
+                ? null
+                : new
+                {
+                    id = analysis.AppliedByUser.Id,
+                    name = $"{analysis.AppliedByUser.FirstName} {analysis.AppliedByUser.LastName}".Trim(),
+                    email = analysis.AppliedByUser.Email
+                }
         };
     }
 
