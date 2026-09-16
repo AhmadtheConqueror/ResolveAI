@@ -1,8 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import type { CurrentUser } from "../api/api";
+import NotificationBell from "./NotificationBell";
 
 type SidebarProps = {
-  currentTab: "dashboard" | "incidents" | "my-work" | "users";
+  currentTab: "dashboard" | "incidents" | "my-work" | "analytics" | "users";
   user: CurrentUser | null;
   onLogout: () => void;
 };
@@ -12,6 +13,7 @@ export default function Sidebar({ currentTab, user, onLogout }: SidebarProps) {
   const role = user?.role ?? "";
   const isEmployee = role === "Employee";
   const isAdmin = role === "Admin";
+  const canViewAnalytics = role === "Technician" || role === "Manager" || role === "Admin";
 
   return (
     <aside className="sidebar">
@@ -56,15 +58,17 @@ export default function Sidebar({ currentTab, user, onLogout }: SidebarProps) {
           </button>
         )}
 
-        <button
-          type="button"
-          id="nav-analytics"
-          className="nav-item nav-item-disabled"
-          title="Analytics (Upcoming Phase)"
-          disabled
-        >
-          Analytics
-        </button>
+        {canViewAnalytics && (
+          <button
+            type="button"
+            id="nav-analytics"
+            className={`nav-item ${currentTab === "analytics" ? "active" : ""}`}
+            aria-current={currentTab === "analytics" ? "page" : undefined}
+            onClick={() => navigate("/analytics")}
+          >
+            Analytics
+          </button>
+        )}
 
         {isAdmin && (
           <button
@@ -78,6 +82,11 @@ export default function Sidebar({ currentTab, user, onLogout }: SidebarProps) {
           </button>
         )}
       </nav>
+
+      <NotificationBell
+        user={user}
+        onAuthLost={onLogout}
+      />
 
       <div className="sidebar-footer">
         <div className="user-summary">

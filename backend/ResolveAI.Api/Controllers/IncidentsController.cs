@@ -21,17 +21,20 @@ public class IncidentsController : ControllerBase
     private readonly IncidentWorkflowService _workflow;
     private readonly IAIIncidentService _aiIncidentService;
     private readonly ISlaService _slaService;
+    private readonly INotificationService _notificationService;
 
     public IncidentsController(
         AppDbContext context,
         IncidentWorkflowService workflow,
         IAIIncidentService aiIncidentService,
-        ISlaService slaService)
+        ISlaService slaService,
+        INotificationService notificationService)
     {
         _context = context;
         _workflow = workflow;
         _aiIncidentService = aiIncidentService;
         _slaService = slaService;
+        _notificationService = notificationService;
     }
 
     [HttpGet("options")]
@@ -621,7 +624,7 @@ public class IncidentsController : ControllerBase
         Guid id,
         AssignIncidentRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var role))
+        if (!TryGetAuthenticatedUser(out var userId, out var role))
         {
             return Unauthorized(new
             {
@@ -677,6 +680,7 @@ public class IncidentsController : ControllerBase
         var wasReassignment =
             incident.AssignedToId.HasValue &&
             incident.AssignedToId != technician.Id;
+        var assignmentChanged = incident.AssignedToId != technician.Id;
 
         var timestamp = DateTime.UtcNow;
 
@@ -688,6 +692,16 @@ public class IncidentsController : ControllerBase
         }
 
         incident.UpdatedAt = timestamp;
+
+        if (assignmentChanged)
+        {
+            await _notificationService.QueueIncidentAssignedAsync(
+                incident,
+                technician,
+                userId,
+                wasReassignment,
+                HttpContext.RequestAborted);
+        }
 
         await _context.SaveChangesAsync();
 
@@ -775,12 +789,21 @@ public class IncidentsController : ControllerBase
             }
         }
 
+        var oldStatus = incident.Status;
+
         _workflow.ApplyStatus(
             incident,
             requestedStatus,
             DateTime.UtcNow,
             request.Resolution
         );
+
+        await _notificationService.QueueIncidentStatusChangedAsync(
+            incident,
+            oldStatus,
+            requestedStatus,
+            userId,
+            HttpContext.RequestAborted);
 
         await _context.SaveChangesAsync();
 
@@ -912,6 +935,11 @@ public class IncidentsController : ControllerBase
 
         incident.UpdatedAt = timestamp;
         _context.IncidentComments.Add(comment);
+
+        await _notificationService.QueueIncidentCommentAddedAsync(
+            incident,
+            author,
+            HttpContext.RequestAborted);
 
         await _context.SaveChangesAsync();
 
@@ -1101,6 +1129,9 @@ public class IncidentsController : ControllerBase
             });
         }
 
+        var previousPriorityName = incident.Priority.Name;
+        var priorityChanged = false;
+
         if (request.ApplyCategory)
         {
             var targetCategoryName = analysis.CategoryRecommendation?.Trim();
@@ -1158,6 +1189,7 @@ public class IncidentsController : ControllerBase
             {
                 incident.PriorityId = matchedPriority.Id;
                 incident.Priority = matchedPriority;
+                priorityChanged = true;
             }
 
             analysis.PriorityApplied = true;
@@ -1166,6 +1198,16 @@ public class IncidentsController : ControllerBase
         analysis.AppliedAt = DateTime.UtcNow;
         analysis.AppliedByUserId = userId;
         incident.UpdatedAt = DateTime.UtcNow;
+
+        if (priorityChanged)
+        {
+            await _notificationService.QueuePriorityChangedAsync(
+                incident,
+                previousPriorityName,
+                incident.Priority.Name,
+                userId,
+                HttpContext.RequestAborted);
+        }
 
         await _context.SaveChangesAsync();
 
@@ -1255,6 +1297,11 @@ public class IncidentsController : ControllerBase
         };
 
         _context.Incidents.Add(incident);
+
+        await _notificationService.QueueIncidentCreatedAsync(
+            incident,
+            reporter.Id,
+            HttpContext.RequestAborted);
 
         await _context.SaveChangesAsync();
 

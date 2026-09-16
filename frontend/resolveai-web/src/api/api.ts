@@ -133,6 +133,83 @@ export type TechnicianWorkload = {
   waitingForUserCount: number;
 };
 
+export type NotificationItem = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  incidentId: string | null;
+  isRead: boolean;
+  createdAt: string;
+  readAt: string | null;
+  actorUserId?: string | null;
+};
+
+export type NotificationsResponse = {
+  items: NotificationItem[];
+  unreadCount: number;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+};
+
+export type AnalyticsRange = "7" | "30" | "90" | "all";
+
+export type AnalyticsOverview = {
+  period: {
+    from: string | null;
+    to: string;
+    range: string;
+  };
+  kpis: {
+    totalIncidents: number;
+    activeIncidents: number;
+    resolvedIncidents: number;
+    slaSuccessPercent: number | null;
+    averageFirstResponseMinutes: number | null;
+    averageResolutionMinutes: number | null;
+  };
+  incidentTrend: Array<{
+    date: string;
+    count: number;
+  }>;
+  byStatus: Array<{
+    status: string;
+    count: number;
+  }>;
+  byPriority: Array<{
+    priority: string;
+    count: number;
+  }>;
+  byCategory: Array<{
+    category: string;
+    count: number;
+  }>;
+  slaPerformance: {
+    met: number;
+    breached: number;
+    activeAtRisk: number;
+    activeBreached: number;
+  };
+  technicianPerformance: Array<{
+    technicianId: string;
+    technicianName: string;
+    active: number;
+    resolved: number;
+    slaSuccessPercent: number | null;
+    averageResolutionMinutes: number | null;
+  }>;
+  departmentPerformance: Array<{
+    departmentId: string | null;
+    departmentName: string;
+    incidents: number;
+    active: number;
+    resolved: number;
+    slaSuccessPercent: number | null;
+  }>;
+};
+
 export type IncidentSla = {
   responseTargetMinutes: number;
   resolutionTargetMinutes: number;
@@ -599,6 +676,99 @@ export async function getTechnicianWorkload() {
   );
 }
 
+export async function getNotifications(params?: {
+  page?: number;
+  pageSize?: number;
+  unreadOnly?: boolean;
+}) {
+  const sp = new URLSearchParams();
+  sp.set("page", String(params?.page ?? 1));
+  sp.set("pageSize", String(params?.pageSize ?? 20));
+  if (params?.unreadOnly) sp.set("unreadOnly", "true");
+
+  return requestJson<NotificationsResponse>(
+    `/api/notifications?${sp.toString()}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      server: "Unable to load notifications.",
+      parse: "ResolveAI returned unexpected notification data.",
+    }
+  );
+}
+
+export async function markNotificationRead(id: string) {
+  return requestJson<{
+    id: string;
+    isRead: boolean;
+    readAt: string | null;
+  }>(
+    `/api/notifications/${id}/read`,
+    {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      notFound: "Notification not found.",
+      server: "Unable to mark notification as read.",
+      parse: "ResolveAI returned unexpected notification data.",
+    }
+  );
+}
+
+export async function markAllNotificationsRead() {
+  return requestJson<{
+    updatedCount: number;
+    unreadCount: number;
+  }>(
+    "/api/notifications/read-all",
+    {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      server: "Unable to mark notifications as read.",
+      parse: "ResolveAI returned unexpected notification data.",
+    }
+  );
+}
+
+export async function getAnalyticsOverview(params?: {
+  range?: AnalyticsRange;
+  from?: string;
+  to?: string;
+  departmentId?: string;
+  technicianId?: string;
+}) {
+  const sp = new URLSearchParams();
+  if (params?.range) sp.set("range", params.range);
+  if (params?.from) sp.set("from", params.from);
+  if (params?.to) sp.set("to", params.to);
+  if (params?.departmentId) sp.set("departmentId", params.departmentId);
+  if (params?.technicianId) sp.set("technicianId", params.technicianId);
+
+  const query = sp.toString();
+
+  return requestJson<AnalyticsOverview>(
+    `/api/analytics/overview${query ? `?${query}` : ""}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to view analytics.",
+      server: "Unable to load analytics.",
+      parse: "ResolveAI returned unexpected analytics data.",
+    }
+  );
+}
+
 export async function getIncident(id: string) {
   return requestJson<IncidentDetail>(
     `/api/incidents/${id}`,
@@ -993,4 +1163,3 @@ export async function resetUserPassword(
     }
   );
 }
-

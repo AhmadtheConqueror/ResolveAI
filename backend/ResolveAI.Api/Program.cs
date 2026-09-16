@@ -22,6 +22,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     builder.Services.AddScoped<ITokenService, TokenService>();
     builder.Services.AddScoped<IncidentWorkflowService>();
     builder.Services.AddScoped<ISlaService, SlaService>();
+    builder.Services.AddScoped<INotificationService, NotificationService>();
+    builder.Services.AddHostedService<SlaNotificationBackgroundService>();
     builder.Services
         .AddHttpClient<IAIIncidentService, GeminiIncidentService>(client =>
         {

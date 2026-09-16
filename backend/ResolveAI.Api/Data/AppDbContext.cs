@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<Incident> Incidents => Set<Incident>();
     public DbSet<IncidentComment> IncidentComments => Set<IncidentComment>();
     public DbSet<IncidentAIAnalysis> IncidentAIAnalyses => Set<IncidentAIAnalysis>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -183,6 +184,69 @@ public class AppDbContext : DbContext
                 a.IncidentId,
                 a.CreatedAt
             });
+
+        // -------------------------
+        // Notifications
+        // -------------------------
+
+        modelBuilder.Entity<Notification>()
+            .Property(n => n.Type)
+            .HasConversion<string>()
+            .HasMaxLength(80);
+
+        modelBuilder.Entity<Notification>()
+            .Property(n => n.Title)
+            .HasMaxLength(160);
+
+        modelBuilder.Entity<Notification>()
+            .Property(n => n.Message)
+            .HasMaxLength(500);
+
+        modelBuilder.Entity<Notification>()
+            .Property(n => n.DeduplicationKey)
+            .HasMaxLength(220);
+
+        modelBuilder.Entity<Notification>()
+            .HasOne(n => n.User)
+            .WithMany()
+            .HasForeignKey(n => n.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Notification>()
+            .HasOne(n => n.Incident)
+            .WithMany()
+            .HasForeignKey(n => n.IncidentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Notification>()
+            .HasOne(n => n.ActorUser)
+            .WithMany()
+            .HasForeignKey(n => n.ActorUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Notification>()
+            .HasIndex(n => new
+            {
+                n.UserId,
+                n.IsRead,
+                n.CreatedAt
+            });
+
+        modelBuilder.Entity<Notification>()
+            .HasIndex(n => new
+            {
+                n.UserId,
+                n.CreatedAt
+            });
+
+        modelBuilder.Entity<Notification>()
+            .HasIndex(n => new
+            {
+                n.UserId,
+                n.DeduplicationKey
+            })
+            .IsUnique()
+            .HasFilter("\"DeduplicationKey\" IS NOT NULL");
 
         // -------------------------
         // Seed Roles

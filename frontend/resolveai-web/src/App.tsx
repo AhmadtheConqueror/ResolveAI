@@ -10,6 +10,7 @@ import DashboardPage from "./pages/DashboardPage";
 import IncidentsPage from "./pages/IncidentsPage";
 import IncidentDetailsPage from "./pages/IncidentDetailsPage";
 import MyWorkPage from "./pages/MyWorkPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
 import UsersPage from "./pages/UsersPage";
 
 function App() {
@@ -41,6 +42,11 @@ function App() {
         <Route
           path="/my-work"
           element={<MyWorkPage />}
+        />
+
+        <Route
+          path="/analytics"
+          element={<AnalyticsPage />}
         />
 
         <Route
