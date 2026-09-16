@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -12,6 +12,11 @@ import type {
   CurrentUser,
 } from "../api/api";
 import Sidebar from "../components/Sidebar";
+import {
+  Skeleton,
+  SkeletonKpiCard,
+  SkeletonTableRow,
+} from "../components/Skeleton";
 
 function readCurrentUser(): CurrentUser | null {
   const storedUser = sessionStorage.getItem("currentUser");
@@ -55,6 +60,26 @@ function formatDateLabel(value: string) {
   }).format(new Date(value));
 }
 
+function formatTooltipDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatAriaDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatIncidentNoun(count: number) {
+  return count === 1 ? "incident" : "incidents";
+}
+
 function getMaxCount(items: Array<{ count: number }>) {
   return Math.max(1, ...items.map((item) => item.count));
 }
@@ -83,11 +108,19 @@ function CountBar({ label, count, max }: CountBarProps) {
 
 export default function AnalyticsPage() {
   const navigate = useNavigate();
+  const trendChartRef = useRef<HTMLDivElement | null>(null);
   const [user] = useState<CurrentUser | null>(() => readCurrentUser());
   const [range, setRange] = useState<AnalyticsRange>("30");
   const [data, setData] = useState<AnalyticsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [trendTooltip, setTrendTooltip] = useState<{
+    date: string;
+    count: number;
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
 
   const role = user?.role ?? "";
   const canViewAnalytics =
@@ -113,6 +146,7 @@ export default function AnalyticsPage() {
   const loadAnalytics = useCallback(async () => {
     if (!user || !canViewAnalytics) return;
 
+    setTrendTooltip(null);
     setLoading(true);
     setError("");
 
@@ -146,6 +180,42 @@ export default function AnalyticsPage() {
     sessionStorage.clear();
     navigate("/", { replace: true });
   }
+
+  const hideTrendTooltip = useCallback(() => {
+    setTrendTooltip(null);
+  }, []);
+
+  const showTrendTooltip = useCallback(
+    (
+      point: AnalyticsOverview["incidentTrend"][number],
+      target: HTMLElement
+    ) => {
+      const chart = trendChartRef.current;
+      if (!chart) return;
+
+      const chartRect = chart.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const tooltipWidth = Math.min(180, Math.max(136, chartRect.width - 16));
+      const halfTooltipWidth = tooltipWidth / 2;
+      const center = targetRect.left - chartRect.left + targetRect.width / 2;
+      const minLeft = halfTooltipWidth + 8;
+      const maxLeft = chartRect.width - halfTooltipWidth - 8;
+      const left =
+        maxLeft < minLeft
+          ? chartRect.width / 2
+          : Math.min(Math.max(center, minLeft), maxLeft);
+      const top = Math.max(8, targetRect.top - chartRect.top - 64);
+
+      setTrendTooltip({
+        date: point.date,
+        count: point.count,
+        left,
+        top,
+        width: tooltipWidth,
+      });
+    },
+    []
+  );
 
   const statusMax = useMemo(
     () => getMaxCount(data?.byStatus ?? []),
@@ -206,9 +276,182 @@ export default function AnalyticsPage() {
           )}
 
           {loading && (
-            <div className="table-loading-state">
-              <span className="spinner-indicator" aria-hidden="true" />
-              Loading analytics...
+            <div className="analytics-skeleton-container" aria-busy="true">
+              <span className="sr-only">Loading analytics insights...</span>
+
+              {/* KPI Grid Placeholder */}
+              <section className="kpi-grid analytics-kpi-grid">
+                <SkeletonKpiCard />
+                <SkeletonKpiCard />
+                <SkeletonKpiCard />
+                <SkeletonKpiCard />
+              </section>
+
+              {/* Charts Grid 1 */}
+              <section className="analytics-grid two-column">
+                <div className="detail-card analytics-card">
+                  <div className="analytics-card-header">
+                    <Skeleton width={180} height={20} />
+                  </div>
+                  <div className="skeleton-chart-bars" aria-hidden="true">
+                    {[45, 80, 60, 95, 30, 75, 55, 90, 40, 70, 85, 65].map((h, i) => (
+                      <div key={i} className="skeleton-chart-col">
+                        <Skeleton
+                          width="100%"
+                          height={`${h}%`}
+                          borderRadius="4px 4px 0 0"
+                        />
+                        <Skeleton width="18px" height={10} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="detail-card analytics-card">
+                  <div className="analytics-card-header">
+                    <Skeleton width={160} height={20} />
+                  </div>
+                  <div className="analytics-count-list">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="analytics-count-row">
+                        <div className="analytics-count-label">
+                          <Skeleton width={90} height={14} />
+                          <Skeleton width={24} height={14} />
+                        </div>
+                        <div className="analytics-count-track" aria-hidden="true">
+                          <Skeleton width={`${75 - i * 12}%`} height="100%" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              {/* Charts Grid 2 */}
+              <section className="analytics-grid two-column">
+                <div className="detail-card analytics-card">
+                  <div className="analytics-card-header">
+                    <Skeleton width={170} height={20} />
+                  </div>
+                  <div className="analytics-count-list">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="analytics-count-row">
+                        <div className="analytics-count-label">
+                          <Skeleton width={80} height={14} />
+                          <Skeleton width={24} height={14} />
+                        </div>
+                        <div className="analytics-count-track" aria-hidden="true">
+                          <Skeleton width={`${80 - i * 16}%`} height="100%" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="detail-card analytics-card">
+                  <div className="analytics-card-header">
+                    <Skeleton width={170} height={20} />
+                  </div>
+                  <div className="analytics-count-list">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="analytics-count-row">
+                        <div className="analytics-count-label">
+                          <Skeleton width={95} height={14} />
+                          <Skeleton width={24} height={14} />
+                        </div>
+                        <div className="analytics-count-track" aria-hidden="true">
+                          <Skeleton width={`${70 - i * 14}%`} height="100%" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              {/* SLA Performance Placeholder */}
+              <section className="detail-card analytics-card">
+                <div className="analytics-card-header">
+                  <Skeleton width={150} height={20} />
+                </div>
+                <div className="sla-performance-grid">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i}>
+                      <Skeleton width={110} height={12} style={{ marginBottom: 8 }} />
+                      <Skeleton width={60} height={30} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* Technician Performance Table Placeholder */}
+              <section className="detail-card detail-card-wide table-card analytics-table-card">
+                <div className="table-card-header">
+                  <Skeleton width={200} height={20} />
+                </div>
+                <div className="table-responsive">
+                  <table className="incident-table">
+                    <thead>
+                      <tr>
+                        <th>Technician</th>
+                        <th>Active</th>
+                        <th>Resolved</th>
+                        <th>SLA Success</th>
+                        <th>Avg Resolution Time</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <SkeletonTableRow
+                          key={i}
+                          columns={[
+                            { width: "130px" },
+                            { width: "30px" },
+                            { width: "30px" },
+                            { width: "50px" },
+                            { width: "70px" },
+                          ]}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              {/* Department Performance Table Placeholder */}
+              {canViewOrganizationTables && (
+                <section className="detail-card detail-card-wide table-card analytics-table-card">
+                  <div className="table-card-header">
+                    <Skeleton width={200} height={20} />
+                  </div>
+                  <div className="table-responsive">
+                    <table className="incident-table">
+                      <thead>
+                        <tr>
+                          <th>Department</th>
+                          <th>Incidents</th>
+                          <th>Active</th>
+                          <th>Resolved</th>
+                          <th>SLA Success</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Array.from({ length: 3 }).map((_, i) => (
+                          <SkeletonTableRow
+                            key={i}
+                            columns={[
+                              { width: "120px" },
+                              { width: "35px" },
+                              { width: "30px" },
+                              { width: "30px" },
+                              { width: "50px" },
+                            ]}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
             </div>
           )}
 
@@ -258,22 +501,69 @@ export default function AnalyticsPage() {
                       No incident data is available for this period.
                     </div>
                   ) : (
-                    <div className="trend-chart">
-                      {data.incidentTrend.map((point) => (
+                    <div
+                      className="trend-chart"
+                      ref={trendChartRef}
+                      onMouseLeave={hideTrendTooltip}
+                    >
+                      {data.incidentTrend.map((point) => {
+                        const isActive = trendTooltip?.date === point.date;
+                        const ariaLabel = `${formatAriaDate(point.date)}: ${
+                          point.count
+                        } ${formatIncidentNoun(point.count)}`;
+
+                        return (
                         <div className="trend-bar-wrap" key={point.date}>
-                          <span
-                            className="trend-bar"
+                          <button
+                            type="button"
+                            className={`trend-bar ${isActive ? "active" : ""}`}
                             style={{
                               height: `${Math.max(
                                 4,
                                 (point.count / trendMax) * 100
                               )}%`,
                             }}
-                            title={`${formatDateLabel(point.date)}: ${point.count}`}
+                            aria-label={ariaLabel}
+                            aria-describedby={
+                              isActive ? "trend-tooltip" : undefined
+                            }
+                            onMouseEnter={(event) =>
+                              showTrendTooltip(point, event.currentTarget)
+                            }
+                            onFocus={(event) =>
+                              showTrendTooltip(point, event.currentTarget)
+                            }
+                            onBlur={hideTrendTooltip}
+                            onClick={(event) =>
+                              showTrendTooltip(point, event.currentTarget)
+                            }
                           />
                           <small>{formatDateLabel(point.date)}</small>
                         </div>
-                      ))}
+                        );
+                      })}
+
+                      {trendTooltip && (
+                        <div
+                          id="trend-tooltip"
+                          role="tooltip"
+                          className="trend-tooltip"
+                          style={{
+                            left: `${trendTooltip.left}px`,
+                            top: `${trendTooltip.top}px`,
+                            width: `${trendTooltip.width}px`,
+                          }}
+                        >
+                          <div>
+                            <span>Date</span>
+                            <strong>{formatTooltipDate(trendTooltip.date)}</strong>
+                          </div>
+                          <div>
+                            <span>Incidents</span>
+                            <strong>{trendTooltip.count}</strong>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
