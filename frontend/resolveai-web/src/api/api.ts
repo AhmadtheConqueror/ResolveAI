@@ -660,3 +660,161 @@ export async function applyAIRecommendation(
   );
 }
 
+// ─── User Administration ────────────────────────────────────────────────────
+
+export type UserRecord = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: { id: string; name: string };
+  department: { id: string; name: string } | null;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type UserOptions = {
+  roles: { id: string; name: string }[];
+  departments: { id: string; name: string }[];
+};
+
+export async function getUsers(): Promise<UserRecord[]> {
+  return requestJson<UserRecord[]>(
+    "/api/users",
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to view users.",
+      server: "Unable to load users.",
+      parse: "ResolveAI returned unexpected user data.",
+    }
+  );
+}
+
+export async function getUserOptions(): Promise<UserOptions> {
+  return requestJson<UserOptions>(
+    "/api/users/options",
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to view user options.",
+      server: "Unable to load user options.",
+      parse: "ResolveAI returned unexpected user options data.",
+    }
+  );
+}
+
+export async function createUser(payload: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  roleId: string;
+  departmentId?: string | null;
+  temporaryPassword: string;
+}): Promise<UserRecord> {
+  return requestJson<UserRecord>(
+    "/api/users",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(payload),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to create users.",
+      validation: "Please check the provided user details.",
+      server: "Unable to create user.",
+      parse: "ResolveAI returned unexpected user data after creation.",
+    }
+  );
+}
+
+export async function updateUser(
+  id: string,
+  payload: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    roleId: string;
+    departmentId?: string | null;
+  }
+): Promise<UserRecord> {
+  return requestJson<UserRecord>(
+    `/api/users/${id}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(payload),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to update users.",
+      notFound: "User not found.",
+      validation: "Please check the updated user details.",
+      server: "Unable to update user.",
+      parse: "ResolveAI returned unexpected user data after update.",
+    }
+  );
+}
+
+export async function updateUserStatus(
+  id: string,
+  isActive: boolean
+): Promise<{ id: string; isActive: boolean }> {
+  return requestJson<{ id: string; isActive: boolean }>(
+    `/api/users/${id}/status`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ isActive }),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to modify user status.",
+      notFound: "User not found.",
+      server: "Unable to update user status.",
+      parse: "ResolveAI returned unexpected response after updating status.",
+    }
+  );
+}
+
+export async function resetUserPassword(
+  id: string,
+  temporaryPassword: string
+): Promise<{ message: string }> {
+  return requestJson<{ message: string }>(
+    `/api/users/${id}/password`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ temporaryPassword }),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to reset user passwords.",
+      notFound: "User not found.",
+      validation: "Please check the temporary password requirements.",
+      server: "Unable to reset user password.",
+      parse: "ResolveAI returned unexpected response after resetting password.",
+    }
+  );
+}
+

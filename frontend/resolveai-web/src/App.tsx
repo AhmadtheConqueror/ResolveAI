@@ -8,6 +8,7 @@ import {
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import IncidentDetailsPage from "./pages/IncidentDetailsPage";
+import UsersPage from "./pages/UsersPage";
 
 function App() {
   return (
@@ -28,6 +29,11 @@ function App() {
         <Route
           path="/incidents/:id"
           element={<IncidentDetailsPage />}
+        />
+
+        <Route
+          path="/users"
+          element={<UsersPage />}
         />
 
         <Route

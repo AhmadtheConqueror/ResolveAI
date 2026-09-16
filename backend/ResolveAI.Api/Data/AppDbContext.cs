@@ -193,33 +193,62 @@ public class AppDbContext : DbContext
             {
                 Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
                 Name = "Employee",
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Role
             {
                 Id = Guid.Parse("22222222-2222-2222-2222-222222222222"),
                 Name = "Technician",
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Role
             {
                 Id = Guid.Parse("33333333-3333-3333-3333-333333333333"),
                 Name = "Manager",
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Role
             {
                 Id = Guid.Parse("44444444-4444-4444-4444-444444444444"),
                 Name = "Admin",
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            }
+        );
+
+        // -------------------------
+        // Seed Departments
+        // -------------------------
+
+        modelBuilder.Entity<Department>().HasData(
+            new Department
+            {
+                Id = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccc01"),
+                Name = "IT",
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new Department
+            {
+                Id = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccc02"),
+                Name = "Finance",
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new Department
+            {
+                Id = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccc03"),
+                Name = "HR",
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new Department
+            {
+                Id = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccc04"),
+                Name = "Operations",
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new Department
+            {
+                Id = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccc05"),
+                Name = "Administration",
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
         );
 
@@ -233,45 +262,35 @@ public class AppDbContext : DbContext
                 Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"),
                 Name = "Hardware",
                 Description = "Physical computer and device issues",
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Category
             {
                 Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2"),
                 Name = "Software",
                 Description = "Application and software issues",
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Category
             {
                 Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3"),
                 Name = "Network",
                 Description = "Network and connectivity issues",
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Category
             {
                 Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4"),
                 Name = "Access",
                 Description = "Authentication and access issues",
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Category
             {
                 Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa5"),
                 Name = "Other",
                 Description = "Other incident types",
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
         );
 
@@ -285,36 +304,28 @@ public class AppDbContext : DbContext
                 Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1"),
                 Name = "Low",
                 Level = 1,
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Priority
             {
                 Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2"),
                 Name = "Medium",
                 Level = 2,
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Priority
             {
                 Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb3"),
                 Name = "High",
                 Level = 3,
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Priority
             {
                 Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4"),
                 Name = "Critical",
                 Level = 4,
-                CreatedAt = new DateTime(
-                    2026, 1, 1, 0, 0, 0,
-                    DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
         );
     }

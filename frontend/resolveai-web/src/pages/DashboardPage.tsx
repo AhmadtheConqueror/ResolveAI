@@ -155,11 +155,16 @@ export default function DashboardPage() {
           </button>
 
           {user?.role === "Admin" && (
-            <button type="button" className="nav-item">
+            <button
+              type="button"
+              className="nav-item"
+              onClick={() => navigate("/users")}
+            >
               Users
             </button>
           )}
         </nav>
+
 
         <div className="sidebar-footer">
           <div className="user-summary">

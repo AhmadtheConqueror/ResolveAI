@@ -1853,3 +1853,306 @@ details[open] .ai-history-toggle::before {
     justify-content: center;
   }
 }
+
+/* ─── Users Page ──────────────────────────────────────────────────────────── */
+
+/* Filter bar */
+.users-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.users-search-input {
+  flex: 1;
+  min-width: 200px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font-size: 13.5px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.users-search-input:focus {
+  border-color: var(--accent);
+}
+
+.users-filter-select {
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  outline: none;
+}
+
+.users-filter-select:focus {
+  border-color: var(--accent);
+}
+
+/* Users table */
+.users-table td {
+  vertical-align: middle;
+}
+
+/* User avatar + name cell */
+.user-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: 0.03em;
+}
+
+.user-email-cell {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.no-dept {
+  color: var(--soft);
+}
+
+/* Role badges */
+.user-role-badge {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 700;
+}
+
+.role-admin {
+  background: #fdf2f8;
+  color: #9d174d;
+  border: 1px solid #fbcfe8;
+}
+
+.role-manager {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.role-technician {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.role-employee {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+/* Status badges */
+.user-status-active {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.user-status-inactive {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Inline status label inside modal header */
+.user-status-inline {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.status-active {
+  color: #15803d;
+}
+
+.status-inactive {
+  color: #b91c1c;
+}
+
+/* Edit button in table */
+.table-action-button {
+  padding: 5px 14px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.table-action-button:hover {
+  background: #dbeafe;
+}
+
+/* User modal card — slightly wider than default */
+.user-modal-card {
+  max-width: 560px;
+}
+
+/* Password field wrapper */
+.password-field-wrapper {
+  position: relative;
+  display: flex;
+}
+
+.password-field-wrapper input {
+  flex: 1;
+  padding-right: 44px;
+}
+
+.password-toggle-button {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 40px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+/* Success message */
+.success-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #15803d;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+/* Extra actions section inside Edit modal */
+.edit-user-extra-actions {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.edit-extra-action-link {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.edit-extra-action-link:hover {
+  color: var(--accent-strong);
+}
+
+.danger-action-link {
+  background: transparent;
+  border: 0;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.danger-button {
+  min-height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  background: var(--danger);
+  color: #ffffff;
+  border: 0;
+  padding: 0 18px;
+  transition: opacity 0.15s;
+}
+
+.danger-button:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.danger-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.activate-action-link {
+  background: transparent;
+  border: 0;
+  color: var(--success);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.activate-action-link:hover {
+  opacity: 0.8;
+}
+
+.reset-password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.deactivate-confirm p {
+  font-size: 13.5px;
+  color: var(--ink);
+  margin: 0;
+}
