@@ -225,14 +225,11 @@ public class UsersController : ControllerBase
         }
 
         // Admin safety: prevent demoting the only remaining active Admin
-        if (user.Role.Name == "Admin" &&
-            role.Name != "Admin" &&
-            user.Id != adminId)
+        if (user.IsActive && user.Role.Name == "Admin" && role.Name != "Admin")
         {
-            var activeAdminCount = await _context.Users
-                .CountAsync(u => u.IsActive && u.Role.Name == "Admin");
+            var otherActiveAdminCount = await CountOtherActiveAdminsAsync(user.Id);
 
-            if (activeAdminCount <= 1)
+            if (otherActiveAdminCount == 0)
             {
                 return Conflict(new
                 {
@@ -316,12 +313,11 @@ public class UsersController : ControllerBase
         }
 
         // Admin safety: prevent deactivating the only remaining active Admin
-        if (!request.IsActive && user.Role.Name == "Admin")
+        if (!request.IsActive && user.IsActive && user.Role.Name == "Admin")
         {
-            var activeAdminCount = await _context.Users
-                .CountAsync(u => u.IsActive && u.Role.Name == "Admin");
+            var otherActiveAdminCount = await CountOtherActiveAdminsAsync(user.Id);
 
-            if (activeAdminCount <= 1)
+            if (otherActiveAdminCount == 0)
             {
                 return Conflict(new
                 {
@@ -375,5 +371,11 @@ public class UsersController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Password reset successfully." });
+    }
+
+    private Task<int> CountOtherActiveAdminsAsync(Guid excludeUserId)
+    {
+        return _context.Users
+            .CountAsync(u => u.IsActive && u.Role.Name == "Admin" && u.Id != excludeUserId);
     }
 }

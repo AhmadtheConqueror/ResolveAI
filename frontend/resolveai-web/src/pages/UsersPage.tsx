@@ -242,6 +242,7 @@ interface EditUserModalProps {
   user: UserRecord;
   options: UserOptions;
   currentAdminId: string;
+  isSoleActiveAdmin: boolean;
   onClose: () => void;
   onUpdated: (user: UserRecord) => void;
   onStatusChanged: (id: string, isActive: boolean) => void;
@@ -252,6 +253,7 @@ function EditUserModal({
   user,
   options,
   currentAdminId,
+  isSoleActiveAdmin,
   onClose,
   onUpdated,
   onStatusChanged,
@@ -442,6 +444,7 @@ function EditUserModal({
                 id="edit-role"
                 value={roleId}
                 onChange={(e) => setRoleId(e.target.value)}
+                disabled={isSoleActiveAdmin}
                 required
               >
                 {options.roles.map((r) => (
@@ -450,6 +453,13 @@ function EditUserModal({
                   </option>
                 ))}
               </select>
+              {isSoleActiveAdmin && (
+                <small className="field-hint warning-hint">
+                  {isSelf
+                    ? "You are the only active Admin. Assign another Admin before changing this role."
+                    : "This user is the only active Admin. Assign another Admin before changing this role."}
+                </small>
+              )}
             </div>
 
             <div className="form-field">
@@ -982,6 +992,14 @@ export default function UsersPage() {
           user={editingUser}
           options={options}
           currentAdminId={user?.id ?? ""}
+          isSoleActiveAdmin={
+            editingUser.isActive &&
+            editingUser.role.name === "Admin" &&
+            users.filter(
+              (u) =>
+                u.isActive && u.role.name === "Admin" && u.id !== editingUser.id
+            ).length === 0
+          }
           onClose={() => setEditingUser(null)}
           onUpdated={handleUserUpdated}
           onStatusChanged={handleStatusChanged}
