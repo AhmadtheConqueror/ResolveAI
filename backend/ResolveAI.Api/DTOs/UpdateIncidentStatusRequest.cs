@@ -6,4 +6,6 @@ public class UpdateIncidentStatusRequest
 {
     [Required]
     public string Status { get; set; } = string.Empty;
+
+    public string? Resolution { get; set; }
 }

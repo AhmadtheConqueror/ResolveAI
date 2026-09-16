@@ -25,6 +25,7 @@ import type {
   IncidentStatus,
   TechnicianUser,
 } from "../api/api";
+import Sidebar from "../components/Sidebar";
 
 type DetailError = {
   title: string;
@@ -399,6 +400,11 @@ export default function IncidentDetailsPage() {
     "category" | "priority" | "both" | null
   >(null);
 
+  // Resolution note modal state
+  const [showResolveModal, setShowResolveModal] = useState(false);
+  const [resolutionText, setResolutionText] = useState("");
+  const [resolveError, setResolveError] = useState("");
+
   const handleUnauthorized = useCallback(() => {
     sessionStorage.clear();
     navigate("/", { replace: true });
@@ -552,8 +558,18 @@ export default function IncidentDetailsPage() {
     navigate("/", { replace: true });
   }
 
-  async function handleStatusUpdate(status: IncidentStatus) {
+  async function handleStatusUpdate(
+    status: IncidentStatus,
+    customResolution?: string
+  ) {
     if (!id) {
+      return;
+    }
+
+    if (status === "Resolved" && !customResolution) {
+      setShowResolveModal(true);
+      setResolutionText("");
+      setResolveError("");
       return;
     }
 
@@ -561,7 +577,7 @@ export default function IncidentDetailsPage() {
     setWorkflowNotice(null);
 
     try {
-      await updateIncidentStatus(id, status);
+      await updateIncidentStatus(id, status, customResolution);
       await refreshIncidentData();
 
       setWorkflowNotice({
@@ -584,6 +600,16 @@ export default function IncidentDetailsPage() {
     } finally {
       setActionBusy(null);
     }
+  }
+
+  async function handleConfirmResolve() {
+    if (!resolutionText.trim() || resolutionText.trim().length < 5) {
+      setResolveError("A resolution description (at least 5 characters) is required.");
+      return;
+    }
+    const note = resolutionText.trim();
+    setShowResolveModal(false);
+    await handleStatusUpdate("Resolved", note);
   }
 
   async function handleAssignTechnician(
@@ -786,70 +812,17 @@ export default function IncidentDetailsPage() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="sidebar-logo">R</div>
-
-          <div>
-            <strong>ResolveAI</strong>
-            <span>Incident Management</span>
-          </div>
-        </div>
-
-        <nav className="sidebar-nav" aria-label="Main navigation">
-          <Link className="nav-item" to="/dashboard">
-            Dashboard
-          </Link>
-
-          <Link
-            className="nav-item active"
-            to={id ? `/incidents/${id}` : "/dashboard"}
-            aria-current="page"
-          >
-            Incidents
-          </Link>
-
-          <Link className="nav-item" to="/dashboard">
-            My Work
-          </Link>
-
-          <Link className="nav-item" to="/dashboard">
-            Analytics
-          </Link>
-
-          {user?.role === "Admin" && (
-            <Link className="nav-item" to="/dashboard">
-              Users
-            </Link>
-          )}
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="user-summary">
-            <strong>
-              {user
-                ? `${user.firstName} ${user.lastName}`
-                : "Signed out"}
-            </strong>
-
-            <span>{user?.role ?? "No active session"}</span>
-          </div>
-
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-          >
-            Sign out
-          </button>
-        </div>
-      </aside>
+      <Sidebar
+        currentTab="incidents"
+        user={user}
+        onLogout={logout}
+      />
 
       <main className="main-content">
         <div className="content-inner">
           <section className="incident-details-page">
-            <Link className="back-link" to="/dashboard">
-              Back to Dashboard
+            <Link className="back-link" to="/incidents">
+              ← Back to Incidents
             </Link>
 
             {loading && (
@@ -1048,6 +1021,16 @@ export default function IncidentDetailsPage() {
                         "No description provided."}
                     </p>
                   </section>
+
+                  {incident.resolution && (
+                    <section className="detail-card detail-card-wide resolution-card">
+                      <div className="resolution-card-header">
+                        <span className="resolution-icon" aria-hidden="true">✓</span>
+                        <h2>Resolution Details</h2>
+                      </div>
+                      <p className="detail-body">{incident.resolution}</p>
+                    </section>
+                  )}
 
                   <section className="detail-card">
                     <h2>Incident Details</h2>
@@ -1820,6 +1803,86 @@ export default function IncidentDetailsPage() {
           </section>
         </div>
       </main>
+
+      {showResolveModal && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="resolve-modal-title"
+        >
+          <div className="modal-card resolve-modal-card">
+            <div className="modal-header">
+              <div>
+                <h2 id="resolve-modal-title">Resolve Incident</h2>
+                <p>Provide a written description of the resolution actions taken.</p>
+              </div>
+              <button
+                type="button"
+                className="close-button"
+                onClick={() => setShowResolveModal(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleConfirmResolve();
+              }}
+            >
+              {resolveError && (
+                <div className="inline-notice error" role="alert">
+                  {resolveError}
+                </div>
+              )}
+
+              <div className="form-field">
+                <label htmlFor="resolve-note-input">
+                  Resolution Summary <span className="required-marker">*</span>
+                </label>
+                <textarea
+                  id="resolve-note-input"
+                  className="resolve-textarea"
+                  rows={4}
+                  placeholder="e.g. Reinstalled VPN client and updated network adapter driver. Confirmed successful connectivity with user."
+                  value={resolutionText}
+                  onChange={(e) => {
+                    setResolutionText(e.target.value);
+                    if (resolveError) setResolveError("");
+                  }}
+                  required
+                />
+                <span className="field-hint">
+                  Minimum 5 characters. This description will be recorded as part of the permanent audit record.
+                </span>
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="workflow-button secondary"
+                  onClick={() => setShowResolveModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  id="confirm-resolve-btn"
+                  className="workflow-button success"
+                  disabled={actionBusy !== null}
+                >
+                  {actionBusy === "Resolved"
+                    ? "Resolving…"
+                    : "Confirm & Mark Resolved"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

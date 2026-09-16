@@ -12,6 +12,7 @@ import {
   isUnauthorizedError,
 } from "../api/api";
 import type { CurrentUser, UserRecord, UserOptions } from "../api/api";
+import Sidebar from "../components/Sidebar";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -722,70 +723,11 @@ export default function UsersPage() {
   return (
     <div className="app-shell">
       {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="sidebar-logo">R</div>
-          <div>
-            <strong>ResolveAI</strong>
-            <span>Incident Management</span>
-          </div>
-        </div>
-
-        <nav className="sidebar-nav" aria-label="Main navigation">
-          <button
-            type="button"
-            className="nav-item"
-            onClick={() => navigate("/dashboard")}
-          >
-            Dashboard
-          </button>
-
-          <button
-            type="button"
-            className="nav-item"
-            onClick={() => navigate("/dashboard")}
-          >
-            Incidents
-          </button>
-
-          <button type="button" className="nav-item">
-            My Work
-          </button>
-
-          <button type="button" className="nav-item">
-            Analytics
-          </button>
-
-          {user?.role === "Admin" && (
-            <button
-              type="button"
-              className="nav-item active"
-              aria-current="page"
-            >
-              Users
-            </button>
-          )}
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="user-summary">
-            <strong>
-              {user
-                ? `${user.firstName} ${user.lastName}`
-                : "Signed out"}
-            </strong>
-            <span>{user?.role ?? "No active session"}</span>
-          </div>
-
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-          >
-            Sign out
-          </button>
-        </div>
-      </aside>
+      <Sidebar
+        currentTab="users"
+        user={user}
+        onLogout={logout}
+      />
 
       {/* Main */}
       <main className="main-content">

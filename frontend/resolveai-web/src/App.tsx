@@ -7,7 +7,9 @@ import {
 
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
+import IncidentsPage from "./pages/IncidentsPage";
 import IncidentDetailsPage from "./pages/IncidentDetailsPage";
+import MyWorkPage from "./pages/MyWorkPage";
 import UsersPage from "./pages/UsersPage";
 
 function App() {
@@ -27,8 +29,18 @@ function App() {
         />
 
         <Route
+          path="/incidents"
+          element={<IncidentsPage />}
+        />
+
+        <Route
           path="/incidents/:id"
           element={<IncidentDetailsPage />}
+        />
+
+        <Route
+          path="/my-work"
+          element={<MyWorkPage />}
         />
 
         <Route

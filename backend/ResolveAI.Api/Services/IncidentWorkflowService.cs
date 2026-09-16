@@ -120,7 +120,8 @@ public class IncidentWorkflowService
     public void ApplyStatus(
         Incident incident,
         IncidentStatus requestedStatus,
-        DateTime timestamp)
+        DateTime timestamp,
+        string? resolution = null)
     {
         incident.Status = requestedStatus;
         incident.UpdatedAt = timestamp;
@@ -131,10 +132,17 @@ public class IncidentWorkflowService
             incident.FirstRespondedAt = timestamp;
         }
 
-        if (requestedStatus == IncidentStatus.Resolved &&
-            incident.ResolvedAt is null)
+        if (requestedStatus == IncidentStatus.Resolved)
         {
-            incident.ResolvedAt = timestamp;
+            if (incident.ResolvedAt is null)
+            {
+                incident.ResolvedAt = timestamp;
+            }
+
+            if (!string.IsNullOrWhiteSpace(resolution))
+            {
+                incident.Resolution = resolution.Trim();
+            }
         }
 
         if (requestedStatus == IncidentStatus.Closed &&

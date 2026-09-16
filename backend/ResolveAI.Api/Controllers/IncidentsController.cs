@@ -7,6 +7,7 @@ using ResolveAI.Api.Data;
 using ResolveAI.Api.DTOs;
 using ResolveAI.Api.Entities;
 using ResolveAI.Api.Enums;
+using ResolveAI.Api.Models.Sla;
 using ResolveAI.Api.Services;
 
 namespace ResolveAI.Api.Controllers;
@@ -65,11 +66,9 @@ public class IncidentsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetIncidents()
+    public async Task<IActionResult> GetIncidents([FromQuery] IncidentQueryParams queryParams)
     {
-        var userIdClaim = User.FindFirstValue(
-            ClaimTypes.NameIdentifier
-        );
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var role = User.FindFirstValue(ClaimTypes.Role);
 
         if (!Guid.TryParse(userIdClaim, out var userId))
@@ -88,12 +87,19 @@ public class IncidentsController : ControllerBase
             .Include(i => i.Priority)
             .AsQueryable();
 
+        // 1. Role-based scoping BEFORE user filters
         if (role == "Employee")
         {
             query = query.Where(i => i.ReporterId == userId);
         }
         else if (role == "Technician")
         {
+            // If Technician specifically queries assignedToId, verify it's themselves
+            if (queryParams.AssignedToId.HasValue && queryParams.AssignedToId.Value != userId)
+            {
+                return Forbid();
+            }
+
             query = query.Where(i =>
                 i.AssignedToId == userId ||
                 i.AssignedToId == null
@@ -104,32 +110,126 @@ public class IncidentsController : ControllerBase
             return Forbid();
         }
 
+        // 2. Search filter (incident number, title, reporter name, reporter email)
+        if (!string.IsNullOrWhiteSpace(queryParams.Search))
+        {
+            var s = queryParams.Search.Trim().ToLower();
+            query = query.Where(i =>
+                i.IncidentNumber.ToLower().Contains(s) ||
+                i.Title.ToLower().Contains(s) ||
+                i.Reporter.FirstName.ToLower().Contains(s) ||
+                i.Reporter.LastName.ToLower().Contains(s) ||
+                (i.Reporter.FirstName + " " + i.Reporter.LastName).ToLower().Contains(s) ||
+                i.Reporter.Email.ToLower().Contains(s)
+            );
+        }
+
+        // 3. Status filter (single, comma-separated, or "active")
+        if (!string.IsNullOrWhiteSpace(queryParams.Status) &&
+            !queryParams.Status.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            if (queryParams.Status.Equals("active", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(i =>
+                    i.Status != IncidentStatus.Resolved &&
+                    i.Status != IncidentStatus.Closed
+                );
+            }
+            else
+            {
+                var tokens = queryParams.Status.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var validStatuses = new List<IncidentStatus>();
+                foreach (var token in tokens)
+                {
+                    if (Enum.TryParse<IncidentStatus>(token, ignoreCase: true, out var st) &&
+                        Enum.IsDefined(typeof(IncidentStatus), st))
+                    {
+                        validStatuses.Add(st);
+                    }
+                }
+                if (validStatuses.Count > 0)
+                {
+                    query = query.Where(i => validStatuses.Contains(i.Status));
+                }
+            }
+        }
+
+        // 4. Priority filter
+        if (!string.IsNullOrWhiteSpace(queryParams.Priority) &&
+            !queryParams.Priority.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var p = queryParams.Priority.Trim();
+            if (Guid.TryParse(p, out var prioId))
+            {
+                query = query.Where(i => i.PriorityId == prioId);
+            }
+            else
+            {
+                query = query.Where(i => i.Priority.Name.ToLower() == p.ToLower());
+            }
+        }
+
+        // 5. Category filter
+        if (!string.IsNullOrWhiteSpace(queryParams.Category) &&
+            !queryParams.Category.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var c = queryParams.Category.Trim();
+            if (Guid.TryParse(c, out var catId))
+            {
+                query = query.Where(i => i.CategoryId == catId);
+            }
+            else
+            {
+                query = query.Where(i => i.Category.Name.ToLower() == c.ToLower());
+            }
+        }
+
+        // 6. Assignment filter
+        if (!string.IsNullOrWhiteSpace(queryParams.Assignment) &&
+            !queryParams.Assignment.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            if (queryParams.Assignment.Equals("unassigned", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(i => i.AssignedToId == null);
+            }
+            else if (queryParams.Assignment.Equals("assigned", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(i => i.AssignedToId != null);
+            }
+        }
+
+        // 7. Specific AssignedToId filter
+        if (queryParams.AssignedToId.HasValue)
+        {
+            query = query.Where(i => i.AssignedToId == queryParams.AssignedToId.Value);
+        }
+
         var rawIncidents = await query
-            .OrderByDescending(i => i.CreatedAt)
             .Select(i => new
             {
                 id = i.Id,
                 incidentNumber = i.IncidentNumber,
                 title = i.Title,
                 status = i.Status.ToString(),
-
+                rawStatus = i.Status,
                 category = i.Category.Name,
                 priority = i.Priority.Name,
-
+                priorityLevel = i.Priority.Level,
                 reporter = new
                 {
                     id = i.Reporter.Id,
-                    name = i.Reporter.FirstName + " " + i.Reporter.LastName
+                    name = i.Reporter.FirstName + " " + i.Reporter.LastName,
+                    email = i.Reporter.Email
                 },
-
                 assignedTo = i.AssignedTo == null
                     ? null
                     : new
                     {
                         id = i.AssignedTo.Id,
-                        name = i.AssignedTo.FirstName + " " + i.AssignedTo.LastName
+                        name = i.AssignedTo.FirstName + " " + i.AssignedTo.LastName,
+                        email = i.AssignedTo.Email
                     },
-
+                resolution = i.Resolution,
                 createdAt = i.CreatedAt,
                 updatedAt = i.UpdatedAt,
                 firstRespondedAt = i.FirstRespondedAt,
@@ -139,27 +239,34 @@ public class IncidentsController : ControllerBase
             .ToListAsync();
 
         var now = DateTime.UtcNow;
-        var incidents = rawIncidents.Select(i =>
+        var withSla = rawIncidents.Select(i =>
         {
             var sla = _slaService.CalculateDetail(
                 i.createdAt,
                 i.priority,
                 i.firstRespondedAt,
                 i.resolvedAt,
-                now);
+                now
+            );
 
             return new
             {
-                id = i.id,
-                incidentNumber = i.incidentNumber,
-                title = i.title,
-                status = i.status,
-                category = i.category,
-                priority = i.priority,
-                reporter = i.reporter,
-                assignedTo = i.assignedTo,
-                createdAt = i.createdAt,
-                updatedAt = i.updatedAt,
+                i.id,
+                i.incidentNumber,
+                i.title,
+                i.status,
+                i.rawStatus,
+                i.category,
+                i.priority,
+                i.priorityLevel,
+                i.reporter,
+                i.assignedTo,
+                i.resolution,
+                i.createdAt,
+                i.updatedAt,
+                i.firstRespondedAt,
+                i.resolvedAt,
+                i.closedAt,
                 sla = new
                 {
                     overallStatus = sla.OverallStatus,
@@ -167,12 +274,271 @@ public class IncidentsController : ControllerBase
                     resolutionStatus = sla.ResolutionStatus,
                     responseDueAt = sla.ResponseDueAt,
                     resolutionDueAt = sla.ResolutionDueAt,
-                    requiresEscalation = sla.RequiresEscalation
+                    requiresEscalation = sla.RequiresEscalation,
+                    responseRemainingMinutes = sla.ResponseRemainingMinutes,
+                    responseOverdueMinutes = sla.ResponseOverdueMinutes,
+                    resolutionRemainingMinutes = sla.ResolutionRemainingMinutes,
+                    resolutionOverdueMinutes = sla.ResolutionOverdueMinutes
                 }
             };
         });
 
-        return Ok(incidents);
+        // 8. SLA filter
+        if (!string.IsNullOrWhiteSpace(queryParams.SlaStatus) &&
+            !queryParams.SlaStatus.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var slaTarget = queryParams.SlaStatus.Trim().Replace(" ", "");
+            if (slaTarget.Equals("AtRiskBreached", StringComparison.OrdinalIgnoreCase) ||
+                slaTarget.Equals("Attention", StringComparison.OrdinalIgnoreCase))
+            {
+                withSla = withSla.Where(x =>
+                    x.sla.overallStatus.Equals("Breached", StringComparison.OrdinalIgnoreCase) ||
+                    x.sla.overallStatus.Equals("AtRisk", StringComparison.OrdinalIgnoreCase)
+                );
+            }
+            else
+            {
+                withSla = withSla.Where(x =>
+                    x.sla.overallStatus.Equals(slaTarget, StringComparison.OrdinalIgnoreCase)
+                );
+            }
+        }
+
+        // 9. Sorting
+        var sortBy = (queryParams.SortBy ?? "updatedAt").Trim().ToLower();
+        var isAsc = (queryParams.SortDirection ?? "desc").Trim().Equals("asc", StringComparison.OrdinalIgnoreCase);
+
+        var sorted = sortBy switch
+        {
+            "urgency" => withSla.OrderBy(x =>
+                x.sla.overallStatus == "Breached" ? 0 :
+                x.sla.overallStatus == "AtRisk" ? 1 : 2
+            ).ThenByDescending(x => x.priorityLevel)
+             .ThenBy(x => x.createdAt),
+
+            "priority" => isAsc
+                ? withSla.OrderBy(x => x.priorityLevel).ThenBy(x => x.createdAt)
+                : withSla.OrderByDescending(x => x.priorityLevel).ThenByDescending(x => x.createdAt),
+
+            "createdat" => isAsc
+                ? withSla.OrderBy(x => x.createdAt)
+                : withSla.OrderByDescending(x => x.createdAt),
+
+            "incidentnumber" => isAsc
+                ? withSla.OrderBy(x => x.incidentNumber)
+                : withSla.OrderByDescending(x => x.incidentNumber),
+
+            _ => isAsc // default: "updatedAt"
+                ? withSla.OrderBy(x => x.updatedAt)
+                : withSla.OrderByDescending(x => x.updatedAt)
+        };
+
+        var finalItems = sorted.Select(x => new
+        {
+            id = x.id,
+            incidentNumber = x.incidentNumber,
+            title = x.title,
+            status = x.status,
+            category = x.category,
+            priority = x.priority,
+            reporter = x.reporter,
+            assignedTo = x.assignedTo,
+            resolution = x.resolution,
+            createdAt = x.createdAt,
+            updatedAt = x.updatedAt,
+            firstRespondedAt = x.firstRespondedAt,
+            resolvedAt = x.resolvedAt,
+            closedAt = x.closedAt,
+            sla = x.sla
+        }).ToList();
+
+        // 10. Server-side Pagination
+        var hasPagingParam = queryParams.Page.HasValue ||
+                             queryParams.PageSize.HasValue ||
+                             Request.Query.ContainsKey("page") ||
+                             Request.Query.ContainsKey("pageSize");
+
+        if (hasPagingParam)
+        {
+            var page = Math.Max(1, queryParams.Page ?? 1);
+            var pageSize = Math.Clamp(queryParams.PageSize ?? 25, 1, 100);
+            var totalCount = finalItems.Count;
+            var pagedItems = finalItems.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+            return Ok(new PagedResult<object>(pagedItems, totalCount, page, pageSize));
+        }
+
+        return Ok(finalItems);
+    }
+
+    [HttpGet("queue-summary")]
+    public async Task<IActionResult> GetQueueSummary()
+    {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var role = User.FindFirstValue(ClaimTypes.Role);
+
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new
+            {
+                message = "Invalid authenticated user."
+            });
+        }
+
+        var now = DateTime.UtcNow;
+
+        if (role is "Manager" or "Admin")
+        {
+            var operationalIncidents = await _context.Incidents
+                .AsNoTracking()
+                .Include(i => i.Priority)
+                .Select(i => new
+                {
+                    status = i.Status,
+                    assignedToId = i.AssignedToId,
+                    createdAt = i.CreatedAt,
+                    priority = i.Priority.Name,
+                    firstRespondedAt = i.FirstRespondedAt,
+                    resolvedAt = i.ResolvedAt
+                })
+                .ToListAsync();
+
+            var triageCount = operationalIncidents.Count(i => i.status == IncidentStatus.Open);
+            var unassignedCount = operationalIncidents.Count(i =>
+                i.assignedToId == null &&
+                (i.status == IncidentStatus.Triaged || i.status == IncidentStatus.Assigned)
+            );
+            var activeCount = operationalIncidents.Count(i =>
+                i.status != IncidentStatus.Resolved &&
+                i.status != IncidentStatus.Closed
+            );
+            var resolvedCount = operationalIncidents.Count(i => i.status == IncidentStatus.Resolved);
+
+            var activeList = operationalIncidents
+                .Where(i => i.status != IncidentStatus.Resolved && i.status != IncidentStatus.Closed)
+                .ToList();
+
+            var slaAttentionCount = activeList.Count(i =>
+            {
+                var sla = _slaService.CalculateDetail(
+                    i.createdAt,
+                    i.priority,
+                    i.firstRespondedAt,
+                    i.resolvedAt,
+                    now
+                );
+                return sla.OverallStatus == SlaStatus.Breached.ToString() ||
+                       sla.OverallStatus == SlaStatus.AtRisk.ToString();
+            });
+
+            return Ok(new
+            {
+                role,
+                triageCount,
+                unassignedCount,
+                slaAttentionCount,
+                activeCount,
+                resolvedCount
+            });
+        }
+        else if (role == "Technician")
+        {
+            var myIncidents = await _context.Incidents
+                .AsNoTracking()
+                .Include(i => i.Priority)
+                .Where(i => i.AssignedToId == userId)
+                .Select(i => new
+                {
+                    status = i.Status,
+                    createdAt = i.CreatedAt,
+                    priority = i.Priority.Name,
+                    firstRespondedAt = i.FirstRespondedAt,
+                    resolvedAt = i.ResolvedAt
+                })
+                .ToListAsync();
+
+            var activeMyList = myIncidents
+                .Where(i => i.status != IncidentStatus.Resolved && i.status != IncidentStatus.Closed)
+                .ToList();
+
+            var allAssignedCount = activeMyList.Count;
+            var assignedCount = activeMyList.Count(i => i.status == IncidentStatus.Assigned);
+            var inProgressCount = activeMyList.Count(i => i.status == IncidentStatus.InProgress);
+            var waitingForUserCount = activeMyList.Count(i => i.status == IncidentStatus.WaitingForUser);
+
+            var slaAttentionCount = activeMyList.Count(i =>
+            {
+                var sla = _slaService.CalculateDetail(
+                    i.createdAt,
+                    i.priority,
+                    i.firstRespondedAt,
+                    i.resolvedAt,
+                    now
+                );
+                return sla.OverallStatus == SlaStatus.Breached.ToString() ||
+                       sla.OverallStatus == SlaStatus.AtRisk.ToString();
+            });
+
+            return Ok(new
+            {
+                role,
+                allAssignedCount,
+                assignedCount,
+                inProgressCount,
+                waitingForUserCount,
+                slaAttentionCount
+            });
+        }
+        else
+        {
+            return Forbid();
+        }
+    }
+
+    [HttpGet("workload")]
+    [Authorize(Roles = "Manager,Admin")]
+    public async Task<IActionResult> GetTechnicianWorkload()
+    {
+        var technicians = await _context.Users
+            .AsNoTracking()
+            .Include(u => u.Role)
+            .Where(u => u.IsActive && u.Role.Name == "Technician")
+            .OrderBy(u => u.LastName)
+            .ThenBy(u => u.FirstName)
+            .Select(u => new
+            {
+                id = u.Id,
+                name = u.FirstName + " " + u.LastName,
+                email = u.Email
+            })
+            .ToListAsync();
+
+        var activeIncidents = await _context.Incidents
+            .AsNoTracking()
+            .Where(i => i.AssignedToId != null &&
+                        i.Status != IncidentStatus.Resolved &&
+                        i.Status != IncidentStatus.Closed)
+            .Select(i => new
+            {
+                assignedToId = i.AssignedToId!.Value,
+                status = i.Status
+            })
+            .ToListAsync();
+
+        var workload = technicians.Select(t =>
+        {
+            var techIncidents = activeIncidents.Where(i => i.assignedToId == t.id).ToList();
+            return new
+            {
+                technician = t,
+                activeCount = techIncidents.Count,
+                assignedCount = techIncidents.Count(i => i.status == IncidentStatus.Assigned),
+                inProgressCount = techIncidents.Count(i => i.status == IncidentStatus.InProgress),
+                waitingForUserCount = techIncidents.Count(i => i.status == IncidentStatus.WaitingForUser)
+            };
+        }).OrderByDescending(w => w.activeCount).ToList();
+
+        return Ok(workload);
     }
 
     [HttpGet("{id:guid}")]
@@ -398,10 +764,22 @@ public class IncidentsController : ControllerBase
             return WorkflowProblem(statusDecision);
         }
 
+        if (requestedStatus == IncidentStatus.Resolved)
+        {
+            if (string.IsNullOrWhiteSpace(request.Resolution) || request.Resolution.Trim().Length < 5)
+            {
+                return BadRequest(new
+                {
+                    message = "A written resolution description (minimum 5 characters) is required when marking an incident as Resolved."
+                });
+            }
+        }
+
         _workflow.ApplyStatus(
             incident,
             requestedStatus,
-            DateTime.UtcNow
+            DateTime.UtcNow,
+            request.Resolution
         );
 
         await _context.SaveChangesAsync();
@@ -410,6 +788,7 @@ public class IncidentsController : ControllerBase
         {
             id = incident.Id,
             status = incident.Status.ToString(),
+            resolution = incident.Resolution,
             updatedAt = incident.UpdatedAt,
             firstRespondedAt = incident.FirstRespondedAt,
             resolvedAt = incident.ResolvedAt,

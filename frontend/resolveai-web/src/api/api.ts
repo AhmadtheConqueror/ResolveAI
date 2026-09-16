@@ -62,6 +62,7 @@ export type Incident = {
     id: string;
     name: string;
   } | null;
+  resolution?: string | null;
   sla?: IncidentSlaCompact;
 };
 
@@ -79,6 +80,57 @@ export type IncidentSlaCompact = {
   responseDueAt: string | null;
   resolutionDueAt: string | null;
   requiresEscalation: boolean;
+  responseRemainingMinutes?: number | null;
+  responseOverdueMinutes?: number | null;
+  resolutionRemainingMinutes?: number | null;
+  resolutionOverdueMinutes?: number | null;
+};
+
+export type PagedResult<T> = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+};
+
+export type IncidentQueryParams = {
+  search?: string;
+  status?: string;
+  priority?: string;
+  category?: string;
+  slaStatus?: string;
+  assignment?: string;
+  assignedToId?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortDirection?: "asc" | "desc";
+};
+
+export type QueueSummary = {
+  role: string;
+  triageCount?: number;
+  unassignedCount?: number;
+  slaAttentionCount?: number;
+  activeCount?: number;
+  resolvedCount?: number;
+  allAssignedCount?: number;
+  assignedCount?: number;
+  inProgressCount?: number;
+  waitingForUserCount?: number;
+};
+
+export type TechnicianWorkload = {
+  technician: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  activeCount: number;
+  assignedCount: number;
+  inProgressCount: number;
+  waitingForUserCount: number;
 };
 
 export type IncidentSla = {
@@ -455,9 +507,27 @@ async function requestJson<T>(
   return readJson<T>(response, messages.parse);
 }
 
-export async function getIncidents() {
+export async function getIncidents(params?: IncidentQueryParams) {
+  let url = "/api/incidents";
+  if (params) {
+    const sp = new URLSearchParams();
+    if (params.search) sp.set("search", params.search);
+    if (params.status) sp.set("status", params.status);
+    if (params.priority) sp.set("priority", params.priority);
+    if (params.category) sp.set("category", params.category);
+    if (params.slaStatus) sp.set("slaStatus", params.slaStatus);
+    if (params.assignment) sp.set("assignment", params.assignment);
+    if (params.assignedToId) sp.set("assignedToId", params.assignedToId);
+    if (params.page !== undefined) sp.set("page", String(params.page));
+    if (params.pageSize !== undefined) sp.set("pageSize", String(params.pageSize));
+    if (params.sortBy) sp.set("sortBy", params.sortBy);
+    if (params.sortDirection) sp.set("sortDirection", params.sortDirection);
+    const q = sp.toString();
+    if (q) url += `?${q}`;
+  }
+
   return requestJson<Incident[]>(
-    "/api/incidents",
+    url,
     {
       method: "GET",
       headers: getAuthHeaders(),
@@ -466,6 +536,65 @@ export async function getIncidents() {
       network: "Unable to connect to ResolveAI.",
       server: "Unable to load incidents.",
       parse: "ResolveAI returned unexpected incident data.",
+    }
+  );
+}
+
+export async function getIncidentsPaged(params: IncidentQueryParams) {
+  const sp = new URLSearchParams();
+  if (params.search) sp.set("search", params.search);
+  if (params.status) sp.set("status", params.status);
+  if (params.priority) sp.set("priority", params.priority);
+  if (params.category) sp.set("category", params.category);
+  if (params.slaStatus) sp.set("slaStatus", params.slaStatus);
+  if (params.assignment) sp.set("assignment", params.assignment);
+  if (params.assignedToId) sp.set("assignedToId", params.assignedToId);
+  sp.set("page", String(params.page ?? 1));
+  sp.set("pageSize", String(params.pageSize ?? 25));
+  if (params.sortBy) sp.set("sortBy", params.sortBy);
+  if (params.sortDirection) sp.set("sortDirection", params.sortDirection);
+
+  return requestJson<PagedResult<Incident>>(
+    `/api/incidents?${sp.toString()}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      server: "Unable to load incidents.",
+      parse: "ResolveAI returned unexpected incident data.",
+    }
+  );
+}
+
+export async function getQueueSummary() {
+  return requestJson<QueueSummary>(
+    "/api/incidents/queue-summary",
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      server: "Unable to load queue metrics.",
+      parse: "ResolveAI returned unexpected queue data.",
+    }
+  );
+}
+
+export async function getTechnicianWorkload() {
+  return requestJson<TechnicianWorkload[]>(
+    "/api/incidents/workload",
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to view technician workload.",
+      server: "Unable to load technician workload.",
+      parse: "ResolveAI returned unexpected workload data.",
     }
   );
 }
@@ -565,7 +694,8 @@ export async function assignIncident(
 
 export async function updateIncidentStatus(
   incidentId: string,
-  status: IncidentStatus
+  status: IncidentStatus,
+  resolution?: string
 ) {
   return requestJson<IncidentStatusUpdate>(
     `/api/incidents/${incidentId}/status`,
@@ -577,6 +707,7 @@ export async function updateIncidentStatus(
       },
       body: JSON.stringify({
         status,
+        resolution: resolution?.trim() || undefined,
       }),
     },
     {

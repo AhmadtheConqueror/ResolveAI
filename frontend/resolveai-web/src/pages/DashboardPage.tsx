@@ -7,6 +7,7 @@ import {
 } from "../api/api";
 import type { CurrentUser, Incident } from "../api/api";
 import NewIncidentModal from "../components/NewIncidentModal";
+import Sidebar from "../components/Sidebar";
 
 function readCurrentUser() {
   const storedUser = sessionStorage.getItem("currentUser");
@@ -180,69 +181,11 @@ export default function DashboardPage() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="sidebar-logo">R</div>
-
-          <div>
-            <strong>ResolveAI</strong>
-            <span>Incident Management</span>
-          </div>
-        </div>
-
-        <nav className="sidebar-nav" aria-label="Main navigation">
-          <button
-            type="button"
-            className="nav-item active"
-            aria-current="page"
-          >
-            Dashboard
-          </button>
-
-          <button type="button" className="nav-item">
-            Incidents
-          </button>
-
-          <button type="button" className="nav-item">
-            My Work
-          </button>
-
-          <button type="button" className="nav-item">
-            Analytics
-          </button>
-
-          {user?.role === "Admin" && (
-            <button
-              type="button"
-              className="nav-item"
-              onClick={() => navigate("/users")}
-            >
-              Users
-            </button>
-          )}
-        </nav>
-
-
-        <div className="sidebar-footer">
-          <div className="user-summary">
-            <strong>
-              {user
-                ? `${user.firstName} ${user.lastName}`
-                : "Signed out"}
-            </strong>
-
-            <span>{user?.role ?? "No active session"}</span>
-          </div>
-
-          <button
-            type="button"
-            className="logout-button"
-            onClick={logout}
-          >
-            Sign out
-          </button>
-        </div>
-      </aside>
+      <Sidebar
+        currentTab="dashboard"
+        user={user}
+        onLogout={logout}
+      />
 
       <main className="main-content">
         <div className="content-inner">
