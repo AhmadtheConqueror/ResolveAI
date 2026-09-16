@@ -16,19 +16,32 @@ public class AuthController : ControllerBase
     private readonly ITokenService _tokenService;
     private readonly AppDbContext _context;
     private readonly IPasswordHasher<AppUser> _passwordHasher;
+    private readonly IConfiguration _configuration;
 
- public AuthController(
-    AppDbContext context,
-    IPasswordHasher<AppUser> passwordHasher,
-    ITokenService tokenService)
-{
-    _context = context;
-    _passwordHasher = passwordHasher;
-    _tokenService = tokenService;
-}
+    public AuthController(
+        AppDbContext context,
+        IPasswordHasher<AppUser> passwordHasher,
+        ITokenService tokenService,
+        IConfiguration configuration)
+    {
+        _context = context;
+        _passwordHasher = passwordHasher;
+        _tokenService = tokenService;
+        _configuration = configuration;
+    }
+
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterRequest request)
     {
+        var allowPublicRegistration = _configuration.GetValue<bool>("Features:AllowPublicRegistration", false);
+        if (!allowPublicRegistration)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                message = "Public registration is disabled. Contact your ResolveAI administrator for access."
+            });
+        }
+
         var email = request.Email.Trim().ToLowerInvariant();
 
         var emailExists = await _context.Users
