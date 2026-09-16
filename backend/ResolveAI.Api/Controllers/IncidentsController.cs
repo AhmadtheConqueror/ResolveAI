@@ -627,6 +627,139 @@ public class IncidentsController : ControllerBase
         return Ok(analyses.Select(ToAIAnalysisResponse));
     }
 
+    [HttpPatch("{id:guid}/ai-analysis/{analysisId:guid}/apply")]
+    public async Task<IActionResult> ApplyAIRecommendation(
+        Guid id,
+        Guid analysisId,
+        ApplyAIRecommendationRequest request)
+    {
+        if (!TryGetAuthenticatedUser(out var userId, out var role))
+        {
+            return Unauthorized(new
+            {
+                message = "Invalid authenticated user."
+            });
+        }
+
+        if (role is not ("Manager" or "Admin"))
+        {
+            return Forbid();
+        }
+
+        if (!request.ApplyCategory && !request.ApplyPriority)
+        {
+            return BadRequest(new
+            {
+                message = "At least one recommendation option must be selected."
+            });
+        }
+
+        var incident = await _context.Incidents
+            .Include(i => i.Category)
+            .Include(i => i.Priority)
+            .SingleOrDefaultAsync(i => i.Id == id);
+
+        if (incident is null)
+        {
+            return NotFound(new
+            {
+                message = "Incident not found."
+            });
+        }
+
+        var analysis = await _context.IncidentAIAnalyses
+            .SingleOrDefaultAsync(a => a.Id == analysisId);
+
+        if (analysis is null || analysis.IncidentId != id)
+        {
+            return NotFound(new
+            {
+                message = "AI analysis not found for this incident."
+            });
+        }
+
+        if (request.ApplyCategory)
+        {
+            var targetCategoryName = analysis.CategoryRecommendation?.Trim();
+            if (string.IsNullOrEmpty(targetCategoryName))
+            {
+                return BadRequest(new
+                {
+                    message = "Analysis does not contain a category recommendation."
+                });
+            }
+
+            var matchedCategory = await _context.Categories
+                .SingleOrDefaultAsync(c => EF.Functions.ILike(c.Name, targetCategoryName));
+
+            if (matchedCategory is null)
+            {
+                return BadRequest(new
+                {
+                    message = $"Recommended category '{targetCategoryName}' is not a valid category."
+                });
+            }
+
+            if (incident.CategoryId != matchedCategory.Id)
+            {
+                incident.CategoryId = matchedCategory.Id;
+                incident.Category = matchedCategory;
+            }
+
+            analysis.CategoryApplied = true;
+        }
+
+        if (request.ApplyPriority)
+        {
+            var targetPriorityName = analysis.PriorityRecommendation?.Trim();
+            if (string.IsNullOrEmpty(targetPriorityName))
+            {
+                return BadRequest(new
+                {
+                    message = "Analysis does not contain a priority recommendation."
+                });
+            }
+
+            var matchedPriority = await _context.Priorities
+                .SingleOrDefaultAsync(p => EF.Functions.ILike(p.Name, targetPriorityName));
+
+            if (matchedPriority is null)
+            {
+                return BadRequest(new
+                {
+                    message = $"Recommended priority '{targetPriorityName}' is not a valid priority."
+                });
+            }
+
+            if (incident.PriorityId != matchedPriority.Id)
+            {
+                incident.PriorityId = matchedPriority.Id;
+                incident.Priority = matchedPriority;
+            }
+
+            analysis.PriorityApplied = true;
+        }
+
+        analysis.AppliedAt = DateTime.UtcNow;
+        analysis.AppliedByUserId = userId;
+        incident.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            incidentId = incident.Id,
+            category = incident.Category.Name,
+            priority = incident.Priority.Name,
+            updatedAt = incident.UpdatedAt,
+            applied = new
+            {
+                category = analysis.CategoryApplied,
+                priority = analysis.PriorityApplied
+            }
+        });
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateIncident(
         CreateIncidentRequest request)
@@ -779,7 +912,11 @@ public class IncidentsController : ControllerBase
             reasoningSummary = analysis.ReasoningSummary,
             suggestedActions,
             createdAt = analysis.CreatedAt,
-            promptVersion = analysis.PromptVersion
+            promptVersion = analysis.PromptVersion,
+            categoryApplied = analysis.CategoryApplied,
+            priorityApplied = analysis.PriorityApplied,
+            appliedAt = analysis.AppliedAt,
+            appliedByUserId = analysis.AppliedByUserId
         };
     }
 

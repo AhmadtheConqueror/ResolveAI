@@ -172,6 +172,12 @@ public class AppDbContext : DbContext
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<IncidentAIAnalysis>()
+            .HasOne(a => a.AppliedByUser)
+            .WithMany()
+            .HasForeignKey(a => a.AppliedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<IncidentAIAnalysis>()
             .HasIndex(a => new
             {
                 a.IncidentId,

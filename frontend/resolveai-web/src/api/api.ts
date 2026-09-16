@@ -136,6 +136,10 @@ export type IncidentAIAnalysis = {
   suggestedActions: string[];
   createdAt: string;
   promptVersion?: string;
+  categoryApplied?: boolean;
+  priorityApplied?: boolean;
+  appliedAt?: string | null;
+  appliedByUserId?: string | null;
 };
 
 export type IncidentOption = {
@@ -615,3 +619,44 @@ export async function getIncidentAIAnalyses(incidentId: string) {
     }
   );
 }
+
+export type ApplyAIRecommendationResponse = {
+  incidentId: string;
+  category: string;
+  priority: string;
+  updatedAt: string;
+  applied: {
+    category: boolean;
+    priority: boolean;
+  };
+};
+
+export async function applyAIRecommendation(
+  incidentId: string,
+  analysisId: string,
+  options: {
+    applyCategory: boolean;
+    applyPriority: boolean;
+  }
+) {
+  return requestJson<ApplyAIRecommendationResponse>(
+    `/api/incidents/${incidentId}/ai-analysis/${analysisId}/apply`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(options),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to apply AI recommendations.",
+      notFound: "Incident or AI analysis not found.",
+      validation: "Unable to apply AI recommendation.",
+      server: "Unable to apply AI recommendation.",
+      parse: "ResolveAI returned unexpected response after applying recommendation.",
+    }
+  );
+}
+

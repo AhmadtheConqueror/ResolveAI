@@ -33,4 +33,14 @@ public class IncidentAIAnalysis
     public AppUser RequestedByUser { get; set; } = null!;
 
     public string PromptVersion { get; set; } = string.Empty;
+
+    public bool CategoryApplied { get; set; } = false;
+
+    public bool PriorityApplied { get; set; } = false;
+
+    public DateTime? AppliedAt { get; set; }
+
+    public Guid? AppliedByUserId { get; set; }
+
+    public AppUser? AppliedByUser { get; set; }
 }

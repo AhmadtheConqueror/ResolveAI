@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   addIncidentComment,
+  applyAIRecommendation,
   assignIncident,
   getIncident,
   getIncidentAIAnalyses,
@@ -293,6 +294,12 @@ export default function IncidentDetailsPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [runningAnalysis, setRunningAnalysis] = useState(false);
   const [aiNotice, setAiNotice] = useState<UiNotice | null>(null);
+  const [applyingRecommendation, setApplyingRecommendation] = useState<
+    "category" | "priority" | "both" | null
+  >(null);
+  const [confirmApplyTarget, setConfirmApplyTarget] = useState<
+    "category" | "priority" | "both" | null
+  >(null);
 
   const handleUnauthorized = useCallback(() => {
     sessionStorage.clear();
@@ -600,6 +607,62 @@ export default function IncidentDetailsPage() {
       });
     } finally {
       setRunningAnalysis(false);
+    }
+  }
+
+  async function handleApplyRecommendation(
+    target: "category" | "priority" | "both"
+  ) {
+    if (!id || aiAnalyses.length === 0) {
+      return;
+    }
+
+    const latest = aiAnalyses[0];
+    setApplyingRecommendation(target);
+    setAiNotice(null);
+    setConfirmApplyTarget(null);
+
+    const applyCategory = target === "category" || target === "both";
+    const applyPriority = target === "priority" || target === "both";
+
+    try {
+      await applyAIRecommendation(id, latest.id, {
+        applyCategory,
+        applyPriority,
+      });
+
+      await refreshIncidentData();
+      await loadAIAnalyses();
+
+      let successText = "AI recommendation applied successfully.";
+      if (target === "category") {
+        successText = "AI category recommendation applied successfully.";
+      } else if (target === "priority") {
+        successText = "AI priority recommendation applied successfully.";
+      } else if (target === "both") {
+        successText =
+          "AI category and priority recommendations applied successfully.";
+      }
+
+      setAiNotice({
+        tone: "success",
+        message: successText,
+      });
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+
+      setAiNotice({
+        tone: "error",
+        message: getErrorMessage(
+          error,
+          "Unable to apply AI recommendation."
+        ),
+      });
+    } finally {
+      setApplyingRecommendation(null);
     }
   }
 
@@ -1109,6 +1172,17 @@ export default function IncidentDetailsPage() {
 
                     {!runningAnalysis && aiAnalyses.length > 0 && (() => {
                       const latest = aiAnalyses[0];
+                      const isManagerOrAdminUser = Boolean(
+                        user && isManagerOrAdmin(user.role)
+                      );
+                      const isCategoryMatchingCurrent =
+                        latest.categoryRecommendation.trim().toLowerCase() ===
+                        incident.category.trim().toLowerCase();
+                      const isPriorityMatchingCurrent =
+                        latest.priorityRecommendation.trim().toLowerCase() ===
+                        incident.priority.name.trim().toLowerCase();
+
+
                       return (
                         <>
                           {/* Context snapshot */}
@@ -1139,6 +1213,32 @@ export default function IncidentDetailsPage() {
                               <span className="ai-reco-value">
                                 {latest.categoryRecommendation}
                               </span>
+
+                              <div className="ai-reco-action-row">
+                                {latest.categoryApplied ? (
+                                  <span className="ai-applied-badge">
+                                    <span className="check-icon" aria-hidden="true">✓</span> Applied by human
+                                  </span>
+                                ) : isCategoryMatchingCurrent ? (
+                                  <span className="ai-matches-notice">
+                                    Already matches current value
+                                  </span>
+                                ) : isManagerOrAdminUser ? (
+                                  <button
+                                    id="apply-category-btn"
+                                    type="button"
+                                    className="ai-apply-button"
+                                    disabled={applyingRecommendation !== null}
+                                    onClick={() =>
+                                      setConfirmApplyTarget("category")
+                                    }
+                                  >
+                                    {applyingRecommendation === "category"
+                                      ? "Applying…"
+                                      : "Apply Category"}
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
 
                             <div className="ai-reco-card">
@@ -1151,6 +1251,32 @@ export default function IncidentDetailsPage() {
                               >
                                 {latest.priorityRecommendation}
                               </span>
+
+                              <div className="ai-reco-action-row">
+                                {latest.priorityApplied ? (
+                                  <span className="ai-applied-badge">
+                                    <span className="check-icon" aria-hidden="true">✓</span> Applied by human
+                                  </span>
+                                ) : isPriorityMatchingCurrent ? (
+                                  <span className="ai-matches-notice">
+                                    Already matches current value
+                                  </span>
+                                ) : isManagerOrAdminUser ? (
+                                  <button
+                                    id="apply-priority-btn"
+                                    type="button"
+                                    className="ai-apply-button"
+                                    disabled={applyingRecommendation !== null}
+                                    onClick={() =>
+                                      setConfirmApplyTarget("priority")
+                                    }
+                                  >
+                                    {applyingRecommendation === "priority"
+                                      ? "Applying…"
+                                      : "Apply Priority"}
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
 
                             <div className="ai-reco-card">
@@ -1260,10 +1386,134 @@ export default function IncidentDetailsPage() {
                                         </strong>
                                       </span>
                                     </div>
+
+                                    <div className="ai-history-governance">
+                                      {analysis.categoryApplied ||
+                                      analysis.priorityApplied ? (
+                                        <span className="ai-history-applied">
+                                          Applied:{" "}
+                                          {analysis.categoryApplied &&
+                                            "Category ✓ "}
+                                          {analysis.priorityApplied &&
+                                            "Priority ✓"}
+                                        </span>
+                                      ) : (
+                                        <span className="ai-history-not-applied">
+                                          Not applied
+                                        </span>
+                                      )}
+                                    </div>
                                   </li>
                                 ))}
                               </ol>
                             </details>
+                          )}
+
+                          {/* Confirmation Modal */}
+                          {confirmApplyTarget && (
+                            <div
+                              className="modal-backdrop"
+                              role="dialog"
+                              aria-modal="true"
+                              aria-labelledby="confirm-apply-title"
+                            >
+                              <div className="modal-card ai-confirm-modal">
+                                <div className="modal-header">
+                                  <div>
+                                    <h2 id="confirm-apply-title">
+                                      Apply AI Recommendation
+                                    </h2>
+                                    <p>
+                                      Please review and confirm human acceptance
+                                      of this recommendation.
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="close-button"
+                                    aria-label="Close"
+                                    onClick={() => setConfirmApplyTarget(null)}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+
+                                <div className="ai-confirm-body">
+                                  {(confirmApplyTarget === "category" ||
+                                    confirmApplyTarget === "both") && (
+                                    <div className="ai-confirm-item">
+                                      <span className="ai-confirm-label">
+                                        Category Recommendation
+                                      </span>
+                                      <div className="ai-confirm-values">
+                                        <span className="ai-confirm-from">
+                                          {incident.category}
+                                        </span>
+                                        <span className="ai-confirm-arrow">
+                                          →
+                                        </span>
+                                        <span className="ai-confirm-to">
+                                          {latest.categoryRecommendation}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {(confirmApplyTarget === "priority" ||
+                                    confirmApplyTarget === "both") && (
+                                    <div className="ai-confirm-item">
+                                      <span className="ai-confirm-label">
+                                        Priority Recommendation
+                                      </span>
+                                      <div className="ai-confirm-values">
+                                        <span className="ai-confirm-from">
+                                          {incident.priority.name}
+                                        </span>
+                                        <span className="ai-confirm-arrow">
+                                          →
+                                        </span>
+                                        <span className="ai-confirm-to">
+                                          {latest.priorityRecommendation}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div className="ai-confirm-notice">
+                                    Applying will update the incident's
+                                    operational classification and record your
+                                    account as the authorizing reviewer. The
+                                    incident status will remain unchanged.
+                                  </div>
+                                </div>
+
+                                <div className="modal-actions">
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    disabled={applyingRecommendation !== null}
+                                    onClick={() => setConfirmApplyTarget(null)}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    id="confirm-apply-submit-btn"
+                                    type="button"
+                                    className="primary-button"
+                                    disabled={applyingRecommendation !== null}
+                                    onClick={() =>
+                                      void handleApplyRecommendation(
+                                        confirmApplyTarget
+                                      )
+                                    }
+                                  >
+                                    {applyingRecommendation !== null
+                                      ? "Applying…"
+                                      : "Confirm & Apply"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
                           )}
                         </>
                       );
