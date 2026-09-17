@@ -8,6 +8,7 @@ import {
   assignIncident,
   getIncident,
   getIncidentAIAnalyses,
+  getIncidentActivity,
   getIncidentComments,
   getTechnicians,
   isForbiddenError,
@@ -19,6 +20,7 @@ import {
 import type {
   CurrentUser,
   IncidentAIAnalysis,
+  IncidentActivityEvent,
   IncidentComment,
   IncidentDetail,
   IncidentSla,
@@ -43,6 +45,22 @@ type StatusAction = {
   status: IncidentStatus;
   tone?: "primary" | "secondary" | "success";
 };
+
+type ActivityChange = {
+  field?: string;
+  oldValue?: string | null;
+  newValue?: string | null;
+};
+
+type ActivityMetadata = {
+  changes?: ActivityChange[];
+  dimension?: string;
+  targetMinutes?: number | null;
+  remainingMinutes?: number | null;
+  overdueMinutes?: number | null;
+};
+
+const ACTIVITY_PAGE_SIZE = 20;
 
 const STATUS_LABELS: Record<IncidentStatus, string> = {
   Open: "Open",
@@ -86,6 +104,122 @@ function formatStatusLabel(value: IncidentStatus | string) {
   return value in STATUS_LABELS
     ? STATUS_LABELS[value as IncidentStatus]
     : value;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getActivityMetadata(event: IncidentActivityEvent) {
+  return isPlainRecord(event.metadata)
+    ? (event.metadata as ActivityMetadata)
+    : null;
+}
+
+function getActivityChanges(event: IncidentActivityEvent) {
+  const metadata = getActivityMetadata(event);
+
+  if (Array.isArray(metadata?.changes)) {
+    return metadata.changes.filter(
+      (change) => change.oldValue || change.newValue
+    );
+  }
+
+  if (event.oldValue && event.newValue) {
+    return [
+      {
+        oldValue: event.oldValue,
+        newValue: event.newValue,
+      },
+    ];
+  }
+
+  return [];
+}
+
+function getActivityActorLabel(event: IncidentActivityEvent) {
+  if (event.actorType === "System") {
+    return "System";
+  }
+
+  if (event.actorType === "AI") {
+    return event.actor.name || "ResolveAI AI";
+  }
+
+  const name = event.actor.name || "Unknown user";
+
+  return event.eventType === "AIRecommendationApplied"
+    ? `Approved by ${name}`
+    : name;
+}
+
+function getActivityMarker(eventType: string) {
+  if (eventType.startsWith("AI")) {
+    return "AI";
+  }
+
+  if (eventType.startsWith("Sla")) {
+    return "SLA";
+  }
+
+  if (eventType.includes("Assigned") || eventType.includes("Unassigned")) {
+    return "A";
+  }
+
+  if (eventType === "CommentAdded") {
+    return "C";
+  }
+
+  if (eventType.includes("Priority")) {
+    return "P";
+  }
+
+  return "S";
+}
+
+function getActivityTone(eventType: string) {
+  if (eventType === "SlaBreached") {
+    return "critical";
+  }
+
+  if (eventType === "SlaAtRisk" || eventType === "PriorityChanged") {
+    return "attention";
+  }
+
+  if (eventType.startsWith("AI")) {
+    return "ai";
+  }
+
+  return "default";
+}
+
+function getActivitySlaDetail(event: IncidentActivityEvent) {
+  if (!event.eventType.startsWith("Sla")) {
+    return null;
+  }
+
+  const metadata = getActivityMetadata(event);
+
+  if (!metadata) {
+    return null;
+  }
+
+  const parts: string[] = [];
+
+  if (typeof metadata.targetMinutes === "number") {
+    parts.push(`Target: ${formatTargetDuration(metadata.targetMinutes)}`);
+  }
+
+  if (typeof metadata.overdueMinutes === "number" && metadata.overdueMinutes > 0) {
+    parts.push(`Exceeded by: ${formatMinutesHuman(metadata.overdueMinutes)}`);
+  } else if (
+    typeof metadata.remainingMinutes === "number" &&
+    metadata.remainingMinutes > 0
+  ) {
+    parts.push(`Remaining: ${formatMinutesHuman(metadata.remainingMinutes)}`);
+  }
+
+  return parts.length > 0 ? parts.join(" | ") : null;
 }
 
 function formatPercent(value: number) {
@@ -371,6 +505,14 @@ export default function IncidentDetailsPage() {
   const [incident, setIncident] =
     useState<IncidentDetail | null>(null);
   const [comments, setComments] = useState<IncidentComment[]>([]);
+  const [activityItems, setActivityItems] = useState<IncidentActivityEvent[]>(
+    []
+  );
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityTotalCount, setActivityTotalCount] = useState(0);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityLoadingMore, setActivityLoadingMore] = useState(false);
+  const [activityError, setActivityError] = useState("");
   const [technicians, setTechnicians] = useState<TechnicianUser[]>(
     []
   );
@@ -411,6 +553,51 @@ export default function IncidentDetailsPage() {
     navigate("/", { replace: true });
   }, [navigate]);
 
+  const loadActivity = useCallback(
+    async (page = 1) => {
+      if (!id) {
+        return;
+      }
+
+      if (page === 1) {
+        setActivityLoading(true);
+      } else {
+        setActivityLoadingMore(true);
+      }
+
+      setActivityError("");
+
+      try {
+        const data = await getIncidentActivity(id, {
+          page,
+          pageSize: ACTIVITY_PAGE_SIZE,
+        });
+
+        setActivityItems((prev) =>
+          page === 1 ? data.items : [...prev, ...data.items]
+        );
+        setActivityPage(data.page);
+        setActivityTotalCount(data.totalCount);
+      } catch (error) {
+        if (isUnauthorizedError(error)) {
+          handleUnauthorized();
+          return;
+        }
+
+        setActivityError(
+          getErrorMessage(error, "Unable to load activity history.")
+        );
+      } finally {
+        if (page === 1) {
+          setActivityLoading(false);
+        } else {
+          setActivityLoadingMore(false);
+        }
+      }
+    },
+    [handleUnauthorized, id]
+  );
+
   const refreshIncidentData = useCallback(async () => {
     if (!id) {
       return;
@@ -425,6 +612,13 @@ export default function IncidentDetailsPage() {
     setComments(commentData);
     setSelectedTechnicianId(incidentData.assignedTo?.id ?? "");
   }, [id]);
+
+  const refreshIncidentAndActivity = useCallback(async () => {
+    await Promise.all([
+      refreshIncidentData(),
+      loadActivity(1),
+    ]);
+  }, [loadActivity, refreshIncidentData]);
 
   const loadAIAnalyses = useCallback(async () => {
     if (!id) {
@@ -464,7 +658,7 @@ export default function IncidentDetailsPage() {
       setWorkflowNotice(null);
       setCommentNotice(null);
 
-      await refreshIncidentData();
+      await refreshIncidentAndActivity();
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -497,7 +691,7 @@ export default function IncidentDetailsPage() {
     } finally {
       setLoading(false);
     }
-  }, [handleUnauthorized, id, refreshIncidentData]);
+  }, [handleUnauthorized, id, refreshIncidentAndActivity]);
 
   useEffect(() => {
     if (!user) {
@@ -579,7 +773,7 @@ export default function IncidentDetailsPage() {
 
     try {
       await updateIncidentStatus(id, status, customResolution);
-      await refreshIncidentData();
+      await refreshIncidentAndActivity();
 
       setWorkflowNotice({
         tone: "success",
@@ -636,7 +830,7 @@ export default function IncidentDetailsPage() {
     try {
       const result = await assignIncident(id, selectedTechnicianId);
 
-      await refreshIncidentData();
+      await refreshIncidentAndActivity();
 
       setWorkflowNotice({
         tone: "success",
@@ -684,7 +878,7 @@ export default function IncidentDetailsPage() {
 
     try {
       await addIncidentComment(id, trimmedComment);
-      await refreshIncidentData();
+      await refreshIncidentAndActivity();
 
       setCommentText("");
     } catch (error) {
@@ -713,6 +907,7 @@ export default function IncidentDetailsPage() {
     try {
       const result = await runIncidentAIAnalysis(id);
       setAiAnalyses((prev) => [result, ...prev]);
+      await loadActivity(1);
       setAiNotice({
         tone: "success",
         message: "AI analysis complete. Review recommendations below.",
@@ -756,7 +951,7 @@ export default function IncidentDetailsPage() {
         applyPriority,
       });
 
-      await refreshIncidentData();
+      await refreshIncidentAndActivity();
       await loadAIAnalyses();
 
       let successText = "AI recommendation applied successfully.";
@@ -810,6 +1005,8 @@ export default function IncidentDetailsPage() {
   const canPostComment = Boolean(
     incident && user && canCommentOnIncident(user, incident)
   );
+
+  const hasMoreActivity = activityItems.length < activityTotalCount;
 
   return (
     <div className="app-shell">
@@ -951,17 +1148,21 @@ export default function IncidentDetailsPage() {
                     <SkeletonText lines={2} lastLineWidth="40%" />
                   </section>
 
-                  {/* Timeline Card Placeholder */}
+                  {/* Activity History Placeholder */}
                   <section className="detail-card detail-card-wide">
-                    <Skeleton width={80} height={18} style={{ marginBottom: 16 }} />
-                    <dl className="timeline-list">
+                    <Skeleton width={140} height={18} style={{ marginBottom: 16 }} />
+                    <div className="activity-list activity-list-skeleton">
                       {Array.from({ length: 3 }).map((_, i) => (
-                        <div key={i}>
-                          <Skeleton width={60} height={12} />
-                          <Skeleton width={150} height={15} />
+                        <div className="activity-item skeleton-activity-item" key={i}>
+                          <Skeleton variant="circle" width={32} height={32} />
+                          <div className="activity-content">
+                            <Skeleton width="42%" height={15} style={{ marginBottom: 8 }} />
+                            <Skeleton width="65%" height={13} style={{ marginBottom: 7 }} />
+                            <Skeleton width="34%" height={12} />
+                          </div>
                         </div>
                       ))}
-                    </dl>
+                    </div>
                   </section>
 
                   {/* Conversation Card Placeholder */}
@@ -1388,41 +1589,131 @@ export default function IncidentDetailsPage() {
                     </p>
                   </section>
 
-                  <section className="detail-card detail-card-wide">
-                    <h2>Timeline</h2>
+                  <section className="detail-card detail-card-wide activity-card">
+                    <div className="activity-header">
+                      <h2>Activity History</h2>
+                      <span>{activityTotalCount}</span>
+                    </div>
 
-                    <dl className="timeline-list">
-                      <div>
-                        <dt>Created</dt>
-                        <dd>{formatDate(incident.createdAt)}</dd>
+                    {activityError && (
+                      <div className="inline-notice error" role="alert">
+                        {activityError}
                       </div>
+                    )}
 
-                      <div>
-                        <dt>Updated</dt>
-                        <dd>{formatDate(incident.updatedAt)}</dd>
+                    {activityLoading ? (
+                      <div className="activity-list activity-list-skeleton">
+                        {Array.from({ length: 3 }).map((_, index) => (
+                          <div
+                            className="activity-item skeleton-activity-item"
+                            key={index}
+                          >
+                            <Skeleton variant="circle" width={32} height={32} />
+                            <div className="activity-content">
+                              <Skeleton
+                                width="42%"
+                                height={15}
+                                style={{ marginBottom: 8 }}
+                              />
+                              <Skeleton
+                                width="65%"
+                                height={13}
+                                style={{ marginBottom: 7 }}
+                              />
+                              <Skeleton width="34%" height={12} />
+                            </div>
+                          </div>
+                        ))}
                       </div>
+                    ) : activityItems.length === 0 ? (
+                      <div className="activity-empty">
+                        No activity has been recorded for this incident yet.
+                      </div>
+                    ) : (
+                      <>
+                        <ol className="activity-list">
+                          {activityItems.map((activity) => {
+                            const changes = getActivityChanges(activity);
+                            const slaDetail = getActivitySlaDetail(activity);
 
-                      {incident.firstRespondedAt && (
-                        <div>
-                          <dt>First Response</dt>
-                          <dd>{formatDate(incident.firstRespondedAt)}</dd>
-                        </div>
-                      )}
+                            return (
+                              <li
+                                className={`activity-item ${getActivityTone(
+                                  activity.eventType
+                                )}`}
+                                key={activity.id}
+                              >
+                                <span
+                                  className="activity-marker"
+                                  aria-hidden="true"
+                                >
+                                  {getActivityMarker(activity.eventType)}
+                                </span>
 
-                      {incident.resolvedAt && (
-                        <div>
-                          <dt>Resolved</dt>
-                          <dd>{formatDate(incident.resolvedAt)}</dd>
-                        </div>
-                      )}
+                                <div className="activity-content">
+                                  <h3>{activity.summary}</h3>
 
-                      {incident.closedAt && (
-                        <div>
-                          <dt>Closed</dt>
-                          <dd>{formatDate(incident.closedAt)}</dd>
-                        </div>
-                      )}
-                    </dl>
+                                  {changes.length > 0 && (
+                                    <div className="activity-change-list">
+                                      {changes.map((change, index) => (
+                                        <div
+                                          className="activity-change-row"
+                                          key={`${activity.id}-${index}`}
+                                        >
+                                          {change.field && (
+                                            <span className="activity-change-field">
+                                              {change.field}
+                                            </span>
+                                          )}
+                                          <span className="activity-change-value">
+                                            {change.oldValue || "Not recorded"}
+                                          </span>
+                                          <span
+                                            className="activity-change-arrow"
+                                            aria-label="changed to"
+                                          >
+                                            -&gt;
+                                          </span>
+                                          <span className="activity-change-value strong">
+                                            {change.newValue || "Not recorded"}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {slaDetail && (
+                                    <p className="activity-detail-line">
+                                      {slaDetail}
+                                    </p>
+                                  )}
+
+                                  <p className="activity-meta">
+                                    {getActivityActorLabel(activity)} -{" "}
+                                    {formatDate(activity.createdAt)}
+                                  </p>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ol>
+
+                        {hasMoreActivity && (
+                          <button
+                            type="button"
+                            className="activity-load-more"
+                            disabled={activityLoadingMore}
+                            onClick={() =>
+                              void loadActivity(activityPage + 1)
+                            }
+                          >
+                            {activityLoadingMore
+                              ? "Loading..."
+                              : "Load more"}
+                          </button>
+                        )}
+                      </>
+                    )}
                   </section>
 
                   <section className="detail-card detail-card-wide conversation-card">

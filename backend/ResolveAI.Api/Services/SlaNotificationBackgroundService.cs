@@ -43,10 +43,18 @@ public class SlaNotificationBackgroundService : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var notifications =
                 scope.ServiceProvider.GetRequiredService<INotificationService>();
+            var audit =
+                scope.ServiceProvider.GetRequiredService<IIncidentAuditService>();
             var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+            var timestamp = DateTime.UtcNow;
+
             await notifications.QueueSlaNotificationsForActiveIncidentsAsync(
-                DateTime.UtcNow,
+                timestamp,
+                cancellationToken);
+
+            await audit.RecordSlaEventsForActiveIncidentsAsync(
+                timestamp,
                 cancellationToken);
 
             await context.SaveChangesAsync(cancellationToken);

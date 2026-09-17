@@ -294,6 +294,23 @@ export type IncidentComment = {
   };
 };
 
+export type IncidentActivityActorType = "User" | "System" | "AI";
+
+export type IncidentActivityEvent = {
+  id: string;
+  eventType: string;
+  summary: string;
+  oldValue: string | null;
+  newValue: string | null;
+  actor: {
+    id: string | null;
+    name: string | null;
+  };
+  actorType: IncidentActivityActorType | string;
+  metadata: unknown | null;
+  createdAt: string;
+};
+
 export type IncidentAIAnalysis = {
   id: string;
   provider: string;
@@ -905,6 +922,33 @@ export async function getIncidentComments(incidentId: string) {
       notFound: "Incident not found.",
       server: "Unable to load incident conversation.",
       parse: "ResolveAI returned unexpected comment data.",
+    }
+  );
+}
+
+export async function getIncidentActivity(
+  incidentId: string,
+  params?: {
+    page?: number;
+    pageSize?: number;
+  }
+) {
+  const sp = new URLSearchParams();
+  sp.set("page", String(params?.page ?? 1));
+  sp.set("pageSize", String(params?.pageSize ?? 20));
+
+  return requestJson<PagedResult<IncidentActivityEvent>>(
+    `/api/incidents/${incidentId}/activity?${sp.toString()}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to view this activity history.",
+      notFound: "Incident not found.",
+      server: "Unable to load activity history.",
+      parse: "ResolveAI returned unexpected activity history data.",
     }
   );
 }

@@ -47,4 +47,7 @@ public class Incident
 
     public ICollection<IncidentAIAnalysis> AIAnalyses { get; set; } =
         new List<IncidentAIAnalysis>();
+
+    public ICollection<IncidentAuditEvent> AuditEvents { get; set; } =
+        new List<IncidentAuditEvent>();
 }

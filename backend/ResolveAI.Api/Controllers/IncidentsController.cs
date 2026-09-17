@@ -22,19 +22,22 @@ public class IncidentsController : ControllerBase
     private readonly IAIIncidentService _aiIncidentService;
     private readonly ISlaService _slaService;
     private readonly INotificationService _notificationService;
+    private readonly IIncidentAuditService _auditService;
 
     public IncidentsController(
         AppDbContext context,
         IncidentWorkflowService workflow,
         IAIIncidentService aiIncidentService,
         ISlaService slaService,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IIncidentAuditService auditService)
     {
         _context = context;
         _workflow = workflow;
         _aiIncidentService = aiIncidentService;
         _slaService = slaService;
         _notificationService = notificationService;
+        _auditService = auditService;
     }
 
     [HttpGet("options")]
@@ -618,6 +621,76 @@ public class IncidentsController : ControllerBase
         });
     }
 
+    [HttpGet("{id:guid}/activity")]
+    public async Task<IActionResult> GetActivity(
+        Guid id,
+        [FromQuery] IncidentActivityQueryParams queryParams)
+    {
+        if (!TryGetAuthenticatedUser(out var userId, out var role))
+        {
+            return Unauthorized(new
+            {
+                message = "Invalid authenticated user."
+            });
+        }
+
+        var incident = await _context.Incidents
+            .AsNoTracking()
+            .SingleOrDefaultAsync(i => i.Id == id);
+
+        if (incident is null)
+        {
+            return NotFound(new
+            {
+                message = "Incident not found."
+            });
+        }
+
+        if (!CanAccessIncident(role, userId, incident))
+        {
+            return Forbid();
+        }
+
+        var page = Math.Max(1, queryParams.Page);
+        var pageSize = Math.Clamp(queryParams.PageSize, 1, 100);
+
+        var query = _context.IncidentAuditEvents
+            .AsNoTracking()
+            .Where(a => a.IncidentId == id);
+
+        var totalCount = await query.CountAsync();
+
+        var auditEvents = await query
+            .OrderByDescending(a => a.CreatedAt)
+            .ThenByDescending(a => a.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var items = auditEvents.Select(a => new
+        {
+            id = a.Id,
+            eventType = a.EventType.ToString(),
+            summary = a.Summary,
+            oldValue = a.OldValue,
+            newValue = a.NewValue,
+            actor = new
+            {
+                id = a.ActorUserId,
+                name = a.ActorDisplayName
+            },
+            actorType = a.ActorType.ToString(),
+            metadata = ParseAuditMetadata(a.Metadata),
+            createdAt = a.CreatedAt
+        }).ToList<object>();
+
+        return Ok(new PagedResult<object>(
+            items,
+            totalCount,
+            page,
+            pageSize));
+    }
+
     [HttpPatch("{id:guid}/assign")]
     [Authorize(Roles = "Manager,Admin")]
     public async Task<IActionResult> AssignTechnician(
@@ -641,6 +714,7 @@ public class IncidentsController : ControllerBase
         }
 
         var incident = await _context.Incidents
+            .Include(i => i.AssignedTo)
             .SingleOrDefaultAsync(i => i.Id == id);
 
         if (incident is null)
@@ -677,6 +751,11 @@ public class IncidentsController : ControllerBase
             });
         }
 
+        var oldStatus = incident.Status;
+        var oldAssigneeId = incident.AssignedToId;
+        var oldAssigneeName = incident.AssignedTo == null
+            ? null
+            : $"{incident.AssignedTo.FirstName} {incident.AssignedTo.LastName}".Trim();
         var wasReassignment =
             incident.AssignedToId.HasValue &&
             incident.AssignedToId != technician.Id;
@@ -700,6 +779,25 @@ public class IncidentsController : ControllerBase
                 technician,
                 userId,
                 wasReassignment,
+                HttpContext.RequestAborted);
+
+            await _auditService.RecordAssignmentChangedAsync(
+                incident,
+                userId,
+                oldAssigneeId,
+                oldAssigneeName,
+                technician.Id,
+                $"{technician.FirstName} {technician.LastName}".Trim(),
+                HttpContext.RequestAborted);
+        }
+
+        if (oldStatus != incident.Status)
+        {
+            await _auditService.RecordStatusChangedAsync(
+                incident,
+                oldStatus,
+                incident.Status,
+                userId,
                 HttpContext.RequestAborted);
         }
 
@@ -790,6 +888,8 @@ public class IncidentsController : ControllerBase
         }
 
         var oldStatus = incident.Status;
+        var hadFirstResponse = incident.FirstRespondedAt.HasValue;
+        var previousResolution = incident.Resolution;
 
         _workflow.ApplyStatus(
             incident,
@@ -804,6 +904,34 @@ public class IncidentsController : ControllerBase
             requestedStatus,
             userId,
             HttpContext.RequestAborted);
+
+        await _auditService.RecordStatusChangedAsync(
+            incident,
+            oldStatus,
+            requestedStatus,
+            userId,
+            HttpContext.RequestAborted);
+
+        if (!hadFirstResponse && incident.FirstRespondedAt.HasValue)
+        {
+            await _auditService.RecordFirstResponseRecordedAsync(
+                incident,
+                userId,
+                HttpContext.RequestAborted);
+        }
+
+        if (requestedStatus == IncidentStatus.Resolved &&
+            !string.IsNullOrWhiteSpace(incident.Resolution) &&
+            !string.Equals(
+                previousResolution?.Trim(),
+                incident.Resolution.Trim(),
+                StringComparison.Ordinal))
+        {
+            await _auditService.RecordResolutionRecordedAsync(
+                incident,
+                userId,
+                HttpContext.RequestAborted);
+        }
 
         await _context.SaveChangesAsync();
 
@@ -942,6 +1070,11 @@ public class IncidentsController : ControllerBase
             commentText,
             HttpContext.RequestAborted);
 
+        await _auditService.RecordCommentAddedAsync(
+            incident,
+            author,
+            HttpContext.RequestAborted);
+
         await _context.SaveChangesAsync();
 
         return Created(
@@ -1017,6 +1150,12 @@ public class IncidentsController : ControllerBase
             };
 
             _context.IncidentAIAnalyses.Add(analysis);
+
+            await _auditService.RecordAIAnalysisGeneratedAsync(
+                incident,
+                analysis,
+                userId,
+                HttpContext.RequestAborted);
 
             await _context.SaveChangesAsync();
 
@@ -1130,6 +1269,7 @@ public class IncidentsController : ControllerBase
             });
         }
 
+        var previousCategoryName = incident.Category.Name;
         var previousPriorityName = incident.Priority.Name;
         var priorityChanged = false;
 
@@ -1196,9 +1336,11 @@ public class IncidentsController : ControllerBase
             analysis.PriorityApplied = true;
         }
 
-        analysis.AppliedAt = DateTime.UtcNow;
+        var appliedAt = DateTime.UtcNow;
+
+        analysis.AppliedAt = appliedAt;
         analysis.AppliedByUserId = userId;
-        incident.UpdatedAt = DateTime.UtcNow;
+        incident.UpdatedAt = appliedAt;
 
         if (priorityChanged)
         {
@@ -1207,6 +1349,19 @@ public class IncidentsController : ControllerBase
                 previousPriorityName,
                 incident.Priority.Name,
                 userId,
+                HttpContext.RequestAborted);
+        }
+
+        if (request.ApplyCategory || request.ApplyPriority)
+        {
+            await _auditService.RecordAIRecommendationAppliedAsync(
+                incident,
+                analysis,
+                userId,
+                request.ApplyCategory ? previousCategoryName : null,
+                request.ApplyCategory ? incident.Category.Name : null,
+                request.ApplyPriority ? previousPriorityName : null,
+                request.ApplyPriority ? incident.Priority.Name : null,
                 HttpContext.RequestAborted);
         }
 
@@ -1304,6 +1459,11 @@ public class IncidentsController : ControllerBase
             reporter.Id,
             HttpContext.RequestAborted);
 
+        await _auditService.RecordIncidentCreatedAsync(
+            incident,
+            reporter.Id,
+            HttpContext.RequestAborted);
+
         await _context.SaveChangesAsync();
 
         return Created(
@@ -1359,6 +1519,23 @@ public class IncidentsController : ControllerBase
         {
             message = decision.Message
         });
+    }
+
+    private static object? ParseAuditMetadata(string? metadata)
+    {
+        if (string.IsNullOrWhiteSpace(metadata))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<JsonElement>(metadata);
+        }
+        catch (JsonException)
+        {
+            return metadata;
+        }
     }
 
     private static object ToAIAnalysisResponse(

@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<Incident> Incidents => Set<Incident>();
     public DbSet<IncidentComment> IncidentComments => Set<IncidentComment>();
     public DbSet<IncidentAIAnalysis> IncidentAIAnalyses => Set<IncidentAIAnalysis>();
+    public DbSet<IncidentAuditEvent> IncidentAuditEvents => Set<IncidentAuditEvent>();
     public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -184,6 +185,67 @@ public class AppDbContext : DbContext
                 a.IncidentId,
                 a.CreatedAt
             });
+
+        // -------------------------
+        // Incident Audit Events
+        // -------------------------
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .Property(a => a.EventType)
+            .HasConversion<string>()
+            .HasMaxLength(80);
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .Property(a => a.ActorType)
+            .HasConversion<string>()
+            .HasMaxLength(40);
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .Property(a => a.ActorDisplayName)
+            .HasMaxLength(160);
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .Property(a => a.Summary)
+            .HasMaxLength(240);
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .Property(a => a.OldValue)
+            .HasMaxLength(240);
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .Property(a => a.NewValue)
+            .HasMaxLength(240);
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .Property(a => a.DeduplicationKey)
+            .HasMaxLength(220);
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .HasOne(a => a.Incident)
+            .WithMany(i => i.AuditEvents)
+            .HasForeignKey(a => a.IncidentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .HasOne(a => a.ActorUser)
+            .WithMany()
+            .HasForeignKey(a => a.ActorUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .HasIndex(a => new
+            {
+                a.IncidentId,
+                a.CreatedAt
+            });
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .HasIndex(a => a.ActorUserId);
+
+        modelBuilder.Entity<IncidentAuditEvent>()
+            .HasIndex(a => a.DeduplicationKey)
+            .IsUnique()
+            .HasFilter("\"DeduplicationKey\" IS NOT NULL");
 
         // -------------------------
         // Notifications
