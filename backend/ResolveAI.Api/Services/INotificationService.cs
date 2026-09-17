@@ -20,6 +20,7 @@ public interface INotificationService
     Task QueueIncidentCommentAddedAsync(
         Incident incident,
         AppUser author,
+        string commentExcerpt,
         CancellationToken cancellationToken = default);
 
     Task QueueIncidentStatusChangedAsync(

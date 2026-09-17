@@ -939,6 +939,7 @@ public class IncidentsController : ControllerBase
         await _notificationService.QueueIncidentCommentAddedAsync(
             incident,
             author,
+            commentText,
             HttpContext.RequestAborted);
 
         await _context.SaveChangesAsync();

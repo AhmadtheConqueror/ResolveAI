@@ -26,6 +26,7 @@ import type {
   TechnicianUser,
 } from "../api/api";
 import Sidebar from "../components/Sidebar";
+import { Skeleton, SkeletonText } from "../components/Skeleton";
 
 type DetailError = {
   title: string;
@@ -826,8 +827,167 @@ export default function IncidentDetailsPage() {
             </Link>
 
             {loading && (
-              <div className="details-state">
-                Loading incident details...
+              <div className="incident-details-skeleton" aria-busy="true">
+                <span className="sr-only">Loading incident details...</span>
+
+                {/* Details Header Placeholder */}
+                <header className="details-header" style={{ marginBottom: 18 }}>
+                  <div style={{ flex: 1 }}>
+                    <Skeleton width={100} height={16} style={{ marginBottom: 10 }} />
+                    <Skeleton variant="heading" width="60%" height={32} />
+                  </div>
+                  <div className="details-badges">
+                    <Skeleton variant="badge" width={80} height={26} />
+                    <Skeleton variant="badge" width={75} height={26} />
+                  </div>
+                </header>
+
+                <div className="details-grid">
+                  {/* Workflow Card Placeholder */}
+                  <section className="detail-card detail-card-wide workflow-card">
+                    <div className="workflow-header">
+                      <div>
+                        <Skeleton width={80} height={18} style={{ marginBottom: 6 }} />
+                        <Skeleton width={110} height={14} />
+                      </div>
+                    </div>
+                    <div className="workflow-layout">
+                      <div className="workflow-block">
+                        <Skeleton width={90} height={12} style={{ marginBottom: 10 }} />
+                        <div className="workflow-actions">
+                          <Skeleton variant="button" width={110} height={38} />
+                          <Skeleton variant="button" width={110} height={38} />
+                        </div>
+                      </div>
+                      <div style={{ width: "240px" }}>
+                        <Skeleton width={120} height={12} style={{ marginBottom: 8 }} />
+                        <Skeleton variant="button" width="100%" height={42} />
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* AI Analysis Panel Placeholder */}
+                  <section className="detail-card detail-card-wide ai-panel">
+                    <div className="ai-panel-header">
+                      <div className="ai-panel-title">
+                        <span className="ai-panel-icon" aria-hidden="true">✦</span>
+                        <Skeleton width={160} height={20} />
+                      </div>
+                      <Skeleton variant="button" width={130} height={36} />
+                    </div>
+                    <div style={{ padding: "16px 0 6px" }}>
+                      <SkeletonText lines={3} lastLineWidth="50%" />
+                    </div>
+                  </section>
+
+                  {/* Description Card Placeholder */}
+                  <section className="detail-card detail-card-wide">
+                    <Skeleton width={100} height={18} style={{ marginBottom: 16 }} />
+                    <SkeletonText lines={4} lastLineWidth="70%" lineHeight={15} gap={10} />
+                  </section>
+
+                  {/* Incident Details Card Placeholder */}
+                  <section className="detail-card">
+                    <Skeleton width={120} height={18} style={{ marginBottom: 16 }} />
+                    <dl className="detail-list">
+                      <div>
+                        <Skeleton width={60} height={12} />
+                        <Skeleton width={120} height={16} />
+                      </div>
+                      <div>
+                        <Skeleton width={50} height={12} />
+                        <Skeleton width={100} height={16} />
+                      </div>
+                      <div>
+                        <Skeleton width={50} height={12} />
+                        <Skeleton width={90} height={16} />
+                      </div>
+                    </dl>
+                  </section>
+
+                  {/* People Card Placeholder */}
+                  <section className="detail-card">
+                    <Skeleton width={70} height={18} style={{ marginBottom: 16 }} />
+                    <div className="person-stack">
+                      <div className="person-block">
+                        <Skeleton width={60} height={11} style={{ marginBottom: 4 }} />
+                        <Skeleton width={140} height={16} style={{ marginBottom: 4 }} />
+                        <Skeleton width={170} height={13} />
+                      </div>
+                      <div className="person-block">
+                        <Skeleton width={110} height={11} style={{ marginBottom: 4 }} />
+                        <Skeleton width={130} height={16} style={{ marginBottom: 4 }} />
+                        <Skeleton width={160} height={13} />
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* SLA Card Placeholder */}
+                  <section className="detail-card detail-card-wide sla-detail-card">
+                    <div className="sla-card-header">
+                      <div>
+                        <Skeleton width={230} height={18} style={{ marginBottom: 6 }} />
+                        <Skeleton width={320} height={13} />
+                      </div>
+                      <Skeleton variant="badge" width={90} height={26} />
+                    </div>
+                    <div className="sla-targets-grid" style={{ marginTop: 16 }}>
+                      <div className="sla-target-card">
+                        <Skeleton width={110} height={14} style={{ marginBottom: 12 }} />
+                        <Skeleton width="90%" height={14} style={{ marginBottom: 8 }} />
+                        <Skeleton width="70%" height={14} />
+                      </div>
+                      <div className="sla-target-card">
+                        <Skeleton width={110} height={14} style={{ marginBottom: 12 }} />
+                        <Skeleton width="90%" height={14} style={{ marginBottom: 8 }} />
+                        <Skeleton width="70%" height={14} />
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Resolution Card Placeholder */}
+                  <section className="detail-card detail-card-wide">
+                    <Skeleton width={90} height={18} style={{ marginBottom: 16 }} />
+                    <SkeletonText lines={2} lastLineWidth="40%" />
+                  </section>
+
+                  {/* Timeline Card Placeholder */}
+                  <section className="detail-card detail-card-wide">
+                    <Skeleton width={80} height={18} style={{ marginBottom: 16 }} />
+                    <dl className="timeline-list">
+                      {Array.from({ length: 3 }).map((_, i) => (
+                        <div key={i}>
+                          <Skeleton width={60} height={12} />
+                          <Skeleton width={150} height={15} />
+                        </div>
+                      ))}
+                    </dl>
+                  </section>
+
+                  {/* Conversation Card Placeholder */}
+                  <section className="detail-card detail-card-wide conversation-card">
+                    <div className="conversation-header">
+                      <Skeleton width={110} height={18} />
+                      <Skeleton variant="pill" width={22} height={18} />
+                    </div>
+                    <div style={{ display: "grid", gap: 14 }}>
+                      <div style={{ padding: 14, background: "var(--surface-muted)", borderRadius: 8 }}>
+                        <Skeleton width={140} height={14} style={{ marginBottom: 8 }} />
+                        <SkeletonText lines={2} lastLineWidth="60%" />
+                      </div>
+                      <div style={{ padding: 14, background: "var(--surface-muted)", borderRadius: 8 }}>
+                        <Skeleton width={160} height={14} style={{ marginBottom: 8 }} />
+                        <SkeletonText lines={2} lastLineWidth="45%" />
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 12 }}>
+                      <Skeleton width="100%" height={90} borderRadius={8} style={{ marginBottom: 10 }} />
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <Skeleton variant="button" width={120} height={38} />
+                      </div>
+                    </div>
+                  </section>
+                </div>
               </div>
             )}
 

@@ -8,6 +8,7 @@ import {
   markNotificationRead,
 } from "../api/api";
 import type { CurrentUser, NotificationItem } from "../api/api";
+import { Skeleton } from "./Skeleton";
 
 type NotificationBellProps = {
   user: CurrentUser | null;
@@ -99,7 +100,9 @@ export default function NotificationBell({
     setOpen(nextOpen);
 
     if (nextOpen) {
-      setLoading(true);
+      if (items.length === 0) {
+        setLoading(true);
+      }
       await loadNotifications();
       setLoading(false);
     }
@@ -196,9 +199,36 @@ export default function NotificationBell({
             )}
           </div>
 
-          {loading && (
-            <div className="notification-state">
-              Loading notifications...
+          {loading && items.length === 0 && (
+            <div className="notification-list" aria-busy="true">
+              <span className="sr-only">Loading notifications…</span>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="skeleton-notification-row"
+                  aria-hidden="true"
+                >
+                  <Skeleton
+                    variant="circle"
+                    width={9}
+                    height={9}
+                    style={{ marginTop: 5 }}
+                  />
+                  <div className="notification-copy">
+                    <Skeleton
+                      width="60%"
+                      height={14}
+                      style={{ marginBottom: 4 }}
+                    />
+                    <Skeleton
+                      width="90%"
+                      height={12}
+                      style={{ marginBottom: 4 }}
+                    />
+                    <Skeleton width="35%" height={11} />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -234,11 +264,27 @@ export default function NotificationBell({
                     aria-hidden="true"
                   />
                   <span className="notification-copy">
-                    <strong>{notification.title}</strong>
-                    <span>{notification.message}</span>
-                    <small>
-                      {formatRelativeTime(notification.createdAt)}
-                    </small>
+                    <strong className="notification-title">{notification.title}</strong>
+                    {notification.incidentTitle && (
+                      <span className="notification-incident-title">
+                        {notification.incidentTitle}
+                      </span>
+                    )}
+                    <span className="notification-meta">
+                      {notification.incidentNumber && (
+                        <span className="notification-inc-number">
+                          {notification.incidentNumber}
+                        </span>
+                      )}
+                      <small>
+                        {formatRelativeTime(notification.createdAt)}
+                      </small>
+                    </span>
+                    {!notification.incidentTitle && (
+                      <span className="notification-plain-message">
+                        {notification.message}
+                      </span>
+                    )}
                   </span>
                 </button>
               ))}

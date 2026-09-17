@@ -139,6 +139,8 @@ export type NotificationItem = {
   title: string;
   message: string;
   incidentId: string | null;
+  incidentTitle?: string | null;
+  incidentNumber?: string | null;
   isRead: boolean;
   createdAt: string;
   readAt: string | null;

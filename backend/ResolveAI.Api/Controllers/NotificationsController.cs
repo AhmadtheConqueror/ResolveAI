@@ -61,6 +61,8 @@ public class NotificationsController : ControllerBase
                 title = n.Title,
                 message = n.Message,
                 incidentId = n.IncidentId,
+                incidentTitle = n.IncidentTitle,
+                incidentNumber = n.IncidentNumber,
                 isRead = n.IsRead,
                 createdAt = n.CreatedAt,
                 readAt = n.ReadAt,

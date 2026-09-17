@@ -14,6 +14,7 @@ import type {
 } from "../api/api";
 import NewIncidentModal from "../components/NewIncidentModal";
 import Sidebar from "../components/Sidebar";
+import { Skeleton, SkeletonTableRow } from "../components/Skeleton";
 
 function readCurrentUser(): CurrentUser | null {
   const storedUser = sessionStorage.getItem("currentUser");
@@ -499,12 +500,20 @@ export default function IncidentsPage() {
               <h2>
                 All Incidents{" "}
                 <span className="count-pill">
-                  {totalCount}
+                  {loading ? (
+                    <Skeleton variant="pill" width={26} height={16} />
+                  ) : (
+                    totalCount
+                  )}
                 </span>
               </h2>
 
               <div className="table-header-meta">
-                Showing {startItem}–{endItem} of {totalCount}
+                {loading ? (
+                  <Skeleton width={130} height={14} />
+                ) : (
+                  `Showing ${startItem}–${endItem} of ${totalCount}`
+                )}
               </div>
             </div>
 
@@ -515,9 +524,43 @@ export default function IncidentsPage() {
             )}
 
             {loading ? (
-              <div className="table-loading-state">
-                <span className="spinner-indicator" aria-hidden="true" />
-                Loading incidents…
+              <div className="table-responsive" aria-busy="true">
+                <span className="sr-only">Loading incidents…</span>
+                <table className="incident-table" aria-label="Incident directory">
+                  <thead>
+                    <tr>
+                      <th scope="col">Incident</th>
+                      <th scope="col">Title</th>
+                      <th scope="col">Reporter</th>
+                      <th scope="col">Category</th>
+                      <th scope="col">Priority</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Assigned To</th>
+                      <th scope="col">SLA</th>
+                      <th scope="col">Created</th>
+                      <th scope="col">Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 9 }).map((_, idx) => (
+                      <SkeletonTableRow
+                        key={idx}
+                        columns={[
+                          { width: "90px" },
+                          { width: "88%" },
+                          { width: "100px" },
+                          { width: "80px" },
+                          { width: "70px", variant: "badge", height: 24 },
+                          { width: "75px", variant: "badge", height: 24 },
+                          { width: "95px" },
+                          { width: "70px", variant: "badge", height: 24 },
+                          { width: "75px" },
+                          { width: "75px" },
+                        ]}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : incidents.length === 0 ? (
               <div className="table-empty-state">

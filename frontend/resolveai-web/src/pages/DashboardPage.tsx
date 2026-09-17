@@ -8,6 +8,7 @@ import {
 import type { CurrentUser, Incident } from "../api/api";
 import NewIncidentModal from "../components/NewIncidentModal";
 import Sidebar from "../components/Sidebar";
+import { SkeletonKpiCard, SkeletonTableRow } from "../components/Skeleton";
 
 function readCurrentUser() {
   const storedUser = sessionStorage.getItem("currentUser");
@@ -210,29 +211,40 @@ export default function DashboardPage() {
           </header>
 
           <section className="kpi-grid" aria-label="Incident summary">
-            <div className="kpi-card">
-              <span>Total Incidents</span>
-              <strong>{kpis.total}</strong>
-              <small>All recorded incidents</small>
-            </div>
+            {loading ? (
+              <>
+                <SkeletonKpiCard />
+                <SkeletonKpiCard />
+                <SkeletonKpiCard />
+                <SkeletonKpiCard />
+              </>
+            ) : (
+              <>
+                <div className="kpi-card">
+                  <span>Total Incidents</span>
+                  <strong>{kpis.total}</strong>
+                  <small>All recorded incidents</small>
+                </div>
 
-            <div className="kpi-card">
-              <span>Open Incidents</span>
-              <strong>{kpis.open}</strong>
-              <small>Currently active</small>
-            </div>
+                <div className="kpi-card">
+                  <span>Open Incidents</span>
+                  <strong>{kpis.open}</strong>
+                  <small>Currently active</small>
+                </div>
 
-            <div className="kpi-card">
-              <span>Critical</span>
-              <strong>{kpis.critical}</strong>
-              <small>Require attention</small>
-            </div>
+                <div className="kpi-card">
+                  <span>Critical</span>
+                  <strong>{kpis.critical}</strong>
+                  <small>Require attention</small>
+                </div>
 
-            <div className="kpi-card">
-              <span>SLA Success</span>
-              <strong>{kpis.slaSuccessRate}</strong>
-              <small>{kpis.slaSuccessDetail}</small>
-            </div>
+                <div className="kpi-card">
+                  <span>SLA Success</span>
+                  <strong>{kpis.slaSuccessRate}</strong>
+                  <small>{kpis.slaSuccessDetail}</small>
+                </div>
+              </>
+            )}
           </section>
 
           <section className="incidents-panel">
@@ -247,8 +259,37 @@ export default function DashboardPage() {
             </div>
 
             {loading && (
-              <div className="table-message">
-                Loading incidents...
+              <div className="table-wrapper" aria-busy="true">
+                <span className="sr-only">Loading recent incidents...</span>
+                <table className="incidents-table">
+                  <thead>
+                    <tr>
+                      <th>Incident Number</th>
+                      <th>Title</th>
+                      <th>Category</th>
+                      <th>Priority</th>
+                      <th>Status</th>
+                      <th>SLA</th>
+                      <th>Created Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 6 }).map((_, idx) => (
+                      <SkeletonTableRow
+                        key={idx}
+                        columns={[
+                          { width: "95px" },
+                          { width: "85%" },
+                          { width: "90px" },
+                          { width: "75px", variant: "badge", height: 24 },
+                          { width: "80px", variant: "badge", height: 24 },
+                          { width: "70px", variant: "badge", height: 24 },
+                          { width: "90px" },
+                        ]}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
 

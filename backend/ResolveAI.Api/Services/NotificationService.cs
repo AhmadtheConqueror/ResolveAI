@@ -34,8 +34,10 @@ public class NotificationService : INotificationService
                 recipientId,
                 NotificationType.IncidentCreated,
                 "New incident requires triage",
-                $"{incident.IncidentNumber} was submitted and requires triage.",
+                $"{incident.IncidentNumber} · submitted and awaiting triage.",
                 incident.Id,
+                incident.Title,
+                incident.IncidentNumber,
                 actorUserId,
                 null,
                 cancellationToken);
@@ -61,8 +63,10 @@ public class NotificationService : INotificationService
             technician.Id,
             type,
             technicianTitle,
-            $"{incident.IncidentNumber} was assigned to you.",
+            $"{incident.IncidentNumber} · assigned to you.",
             incident.Id,
+            incident.Title,
+            incident.IncidentNumber,
             actorUserId,
             null,
             cancellationToken);
@@ -71,8 +75,10 @@ public class NotificationService : INotificationService
             incident.ReporterId,
             type,
             "Your incident has been assigned",
-            $"Your incident has been assigned to {GetDisplayName(technician)}.",
+            $"{incident.IncidentNumber} · assigned to {GetDisplayName(technician)}.",
             incident.Id,
+            incident.Title,
+            incident.IncidentNumber,
             actorUserId,
             null,
             cancellationToken);
@@ -81,10 +87,12 @@ public class NotificationService : INotificationService
     public async Task QueueIncidentCommentAddedAsync(
         Incident incident,
         AppUser author,
+        string commentExcerpt,
         CancellationToken cancellationToken = default)
     {
         var authorRole = author.Role?.Name;
         var authorName = GetDisplayName(author);
+        var excerpt = TruncateExcerpt(commentExcerpt, 100);
 
         if (authorRole == "Employee")
         {
@@ -94,8 +102,10 @@ public class NotificationService : INotificationService
                     incident.AssignedToId.Value,
                     NotificationType.IncidentCommentAdded,
                     "New reply from reporter",
-                    $"{authorName} replied to {incident.IncidentNumber}.",
+                    $"{incident.IncidentNumber} · {authorName}: {excerpt}",
                     incident.Id,
+                    incident.Title,
+                    incident.IncidentNumber,
                     author.Id,
                     null,
                     cancellationToken);
@@ -113,8 +123,10 @@ public class NotificationService : INotificationService
                         recipientId,
                         NotificationType.IncidentCommentAdded,
                         "Reporter replied on unassigned incident",
-                        $"{authorName} replied to {incident.IncidentNumber}.",
+                        $"{incident.IncidentNumber} · {authorName}: {excerpt}",
                         incident.Id,
+                        incident.Title,
+                        incident.IncidentNumber,
                         author.Id,
                         null,
                         cancellationToken);
@@ -130,8 +142,10 @@ public class NotificationService : INotificationService
                 incident.ReporterId,
                 NotificationType.IncidentCommentAdded,
                 "New reply on your incident",
-                $"{authorName} replied to {incident.IncidentNumber}.",
+                $"{incident.IncidentNumber} · {authorName}: {excerpt}",
                 incident.Id,
+                incident.Title,
+                incident.IncidentNumber,
                 author.Id,
                 null,
                 cancellationToken);
@@ -145,8 +159,10 @@ public class NotificationService : INotificationService
                 incident.ReporterId,
                 NotificationType.IncidentCommentAdded,
                 "New reply on your incident",
-                $"{authorName} replied to {incident.IncidentNumber}.",
+                $"{incident.IncidentNumber} · {authorName}: {excerpt}",
                 incident.Id,
+                incident.Title,
+                incident.IncidentNumber,
                 author.Id,
                 null,
                 cancellationToken);
@@ -156,9 +172,11 @@ public class NotificationService : INotificationService
                 await QueueNotificationAsync(
                     incident.AssignedToId.Value,
                     NotificationType.IncidentCommentAdded,
-                    "Manager update on assigned incident",
-                    $"{authorName} replied to {incident.IncidentNumber}.",
+                    "Manager update on your incident",
+                    $"{incident.IncidentNumber} · {authorName}: {excerpt}",
                     incident.Id,
+                    incident.Title,
+                    incident.IncidentNumber,
                     author.Id,
                     null,
                     cancellationToken);
@@ -183,8 +201,10 @@ public class NotificationService : INotificationService
                 incident.ReporterId,
                 NotificationType.IncidentResolved,
                 "Incident resolved",
-                $"{actorName} marked {incident.IncidentNumber} as resolved. Review the resolution and confirm closure.",
+                $"{incident.IncidentNumber} · marked resolved by {actorName}. Please review and confirm closure.",
                 incident.Id,
+                incident.Title,
+                incident.IncidentNumber,
                 actorUserId,
                 null,
                 cancellationToken);
@@ -198,8 +218,10 @@ public class NotificationService : INotificationService
                 incident.ReporterId,
                 NotificationType.IncidentClosed,
                 "Incident closed",
-                $"{actorName} closed {incident.IncidentNumber}.",
+                $"{incident.IncidentNumber} · closed by {actorName}.",
                 incident.Id,
+                incident.Title,
+                incident.IncidentNumber,
                 actorUserId,
                 null,
                 cancellationToken);
@@ -210,8 +232,10 @@ public class NotificationService : INotificationService
                     incident.AssignedToId.Value,
                     NotificationType.IncidentClosed,
                     "Incident closed",
-                    $"{actorName} closed {incident.IncidentNumber}.",
+                    $"{incident.IncidentNumber} · closed by {actorName}.",
                     incident.Id,
+                    incident.Title,
+                    incident.IncidentNumber,
                     actorUserId,
                     null,
                     cancellationToken);
@@ -224,8 +248,10 @@ public class NotificationService : INotificationService
             incident.ReporterId,
             NotificationType.IncidentStatusChanged,
             "Incident status updated",
-            $"{actorName} changed {incident.IncidentNumber} from {FormatStatus(oldStatus)} to {FormatStatus(newStatus)}.",
+            $"{incident.IncidentNumber} · status changed from {FormatStatus(oldStatus)} to {FormatStatus(newStatus)} by {actorName}.",
             incident.Id,
+            incident.Title,
+            incident.IncidentNumber,
             actorUserId,
             null,
             cancellationToken);
@@ -236,8 +262,10 @@ public class NotificationService : INotificationService
                 incident.AssignedToId.Value,
                 NotificationType.IncidentStatusChanged,
                 "Assigned incident status updated",
-                $"{actorName} changed {incident.IncidentNumber} from {FormatStatus(oldStatus)} to {FormatStatus(newStatus)}.",
+                $"{incident.IncidentNumber} · status changed from {FormatStatus(oldStatus)} to {FormatStatus(newStatus)} by {actorName}.",
                 incident.Id,
+                incident.Title,
+                incident.IncidentNumber,
                 actorUserId,
                 null,
                 cancellationToken);
@@ -271,8 +299,10 @@ public class NotificationService : INotificationService
                 recipientId,
                 NotificationType.PriorityChanged,
                 "Incident priority changed",
-                $"{actorName} changed {incident.IncidentNumber} priority from {previousPriority} to {newPriority}.",
+                $"{incident.IncidentNumber} · priority changed from {previousPriority} to {newPriority} by {actorName}.",
                 incident.Id,
+                incident.Title,
+                incident.IncidentNumber,
                 actorUserId,
                 null,
                 cancellationToken);
@@ -297,7 +327,7 @@ public class NotificationService : INotificationService
                 incident,
                 NotificationType.SlaAtRisk,
                 "Response SLA at risk",
-                $"{incident.IncidentNumber} response SLA is at risk{FormatRemaining(sla.ResponseRemainingMinutes)}.",
+                $"{incident.IncidentNumber} · response SLA is at risk{FormatRemaining(sla.ResponseRemainingMinutes)}.",
                 "response:atrisk",
                 cancellationToken);
         }
@@ -308,7 +338,7 @@ public class NotificationService : INotificationService
                 incident,
                 NotificationType.SlaBreached,
                 "Response SLA breached",
-                $"{incident.IncidentNumber} response SLA has breached{FormatOverdue(sla.ResponseOverdueMinutes)}.",
+                $"{incident.IncidentNumber} · response SLA has breached{FormatOverdue(sla.ResponseOverdueMinutes)}.",
                 "response:breached",
                 cancellationToken);
         }
@@ -319,7 +349,7 @@ public class NotificationService : INotificationService
                 incident,
                 NotificationType.SlaAtRisk,
                 "Resolution SLA at risk",
-                $"{incident.IncidentNumber} resolution SLA is at risk{FormatRemaining(sla.ResolutionRemainingMinutes)}.",
+                $"{incident.IncidentNumber} · resolution SLA is at risk{FormatRemaining(sla.ResolutionRemainingMinutes)}.",
                 "resolution:atrisk",
                 cancellationToken);
         }
@@ -330,7 +360,7 @@ public class NotificationService : INotificationService
                 incident,
                 NotificationType.SlaBreached,
                 "Resolution SLA breached",
-                $"{incident.IncidentNumber} resolution SLA has breached{FormatOverdue(sla.ResolutionOverdueMinutes)}.",
+                $"{incident.IncidentNumber} · resolution SLA has breached{FormatOverdue(sla.ResolutionOverdueMinutes)}.",
                 "resolution:breached",
                 cancellationToken);
         }
@@ -378,18 +408,27 @@ public class NotificationService : INotificationService
                 title,
                 message,
                 incident.Id,
+                incident.Title,
+                incident.IncidentNumber,
                 null,
                 deduplicationKey,
                 cancellationToken);
         }
     }
 
+    /// <summary>
+    /// SLA notifications go to:
+    ///   1. The assigned technician (if any)
+    ///   2. All active Managers — or all active Admins if no Managers exist
+    /// Unrelated technicians are never included.
+    /// </summary>
     private async Task<IReadOnlyList<Guid>> GetSlaRecipientIdsAsync(
         Incident incident,
         CancellationToken cancellationToken)
     {
         var recipients = new HashSet<Guid>();
 
+        // 1. Assigned technician
         if (incident.AssignedToId.HasValue)
         {
             var activeTechnicianIds = await FilterActiveRecipientIdsAsync(
@@ -403,6 +442,7 @@ public class NotificationService : INotificationService
             }
         }
 
+        // 2. Managers (or Admin fallback)
         var managerIds = await GetActiveManagersOrAdminFallbackAsync(
             null,
             cancellationToken);
@@ -480,6 +520,8 @@ public class NotificationService : INotificationService
         string title,
         string message,
         Guid? incidentId,
+        string? incidentTitle,
+        string? incidentNumber,
         Guid? actorUserId,
         string? deduplicationKey,
         CancellationToken cancellationToken)
@@ -507,6 +549,8 @@ public class NotificationService : INotificationService
             Title = title,
             Message = message,
             IncidentId = incidentId,
+            IncidentTitle = incidentTitle,
+            IncidentNumber = incidentNumber,
             ActorUserId = actorUserId,
             DeduplicationKey = deduplicationKey,
             CreatedAt = DateTime.UtcNow
@@ -624,5 +668,25 @@ public class NotificationService : INotificationService
         return remainingHours == 0
             ? $"{days} days"
             : $"{days} days {remainingHours} hours";
+    }
+
+    private static string TruncateExcerpt(string text, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        // Remove newlines and collapse whitespace for the excerpt
+        var single = string.Join(" ", text.Split(
+            new[] { '\r', '\n' },
+            StringSplitOptions.RemoveEmptyEntries));
+
+        if (single.Length <= maxLength)
+        {
+            return single;
+        }
+
+        return single[..maxLength].TrimEnd() + "…";
     }
 }

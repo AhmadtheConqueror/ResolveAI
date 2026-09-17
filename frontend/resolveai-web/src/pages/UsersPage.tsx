@@ -13,6 +13,7 @@ import {
 } from "../api/api";
 import type { CurrentUser, UserRecord, UserOptions } from "../api/api";
 import Sidebar from "../components/Sidebar";
+import { SkeletonKpiCard, SkeletonTableRow } from "../components/Skeleton";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -755,26 +756,37 @@ export default function UsersPage() {
 
           {/* KPI Cards */}
           <section className="kpi-grid" aria-label="User summary">
-            <div className="kpi-card">
-              <span>Total Users</span>
-              <strong>{kpis.total}</strong>
-              <small>Provisioned accounts</small>
-            </div>
-            <div className="kpi-card">
-              <span>Active</span>
-              <strong>{kpis.active}</strong>
-              <small>Can log in</small>
-            </div>
-            <div className="kpi-card">
-              <span>Inactive</span>
-              <strong>{kpis.inactive}</strong>
-              <small>Blocked from login</small>
-            </div>
-            <div className="kpi-card">
-              <span>Administrators</span>
-              <strong>{kpis.admins}</strong>
-              <small>Active Admins</small>
-            </div>
+            {loading ? (
+              <>
+                <SkeletonKpiCard />
+                <SkeletonKpiCard />
+                <SkeletonKpiCard />
+                <SkeletonKpiCard />
+              </>
+            ) : (
+              <>
+                <div className="kpi-card">
+                  <span>Total Users</span>
+                  <strong>{kpis.total}</strong>
+                  <small>Provisioned accounts</small>
+                </div>
+                <div className="kpi-card">
+                  <span>Active</span>
+                  <strong>{kpis.active}</strong>
+                  <small>Can log in</small>
+                </div>
+                <div className="kpi-card">
+                  <span>Inactive</span>
+                  <strong>{kpis.inactive}</strong>
+                  <small>Blocked from login</small>
+                </div>
+                <div className="kpi-card">
+                  <span>Administrators</span>
+                  <strong>{kpis.admins}</strong>
+                  <small>Active Admins</small>
+                </div>
+              </>
+            )}
           </section>
 
           {/* Filter bar */}
@@ -837,7 +849,38 @@ export default function UsersPage() {
           {/* Table */}
           <section className="incidents-panel">
             {loading && (
-              <div className="table-message">Loading users…</div>
+              <div className="table-wrapper" aria-busy="true">
+                <span className="sr-only">Loading user accounts…</span>
+                <table className="incidents-table users-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Department</th>
+                      <th>Role</th>
+                      <th>Status</th>
+                      <th>Created</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 6 }).map((_, idx) => (
+                      <SkeletonTableRow
+                        key={idx}
+                        columns={[
+                          { width: "130px" },
+                          { width: "160px" },
+                          { width: "90px" },
+                          { width: "70px", variant: "badge", height: 24 },
+                          { width: "65px", variant: "badge", height: 24 },
+                          { width: "85px" },
+                          { width: "75px", variant: "button", height: 28 },
+                        ]}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
 
             {!loading && error && (

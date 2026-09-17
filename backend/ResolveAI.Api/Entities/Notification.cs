@@ -31,4 +31,10 @@ public class Notification
     public AppUser? ActorUser { get; set; }
 
     public string? DeduplicationKey { get; set; }
+
+    /// <summary>Snapshot of the incident title at notification creation time.</summary>
+    public string? IncidentTitle { get; set; }
+
+    /// <summary>Snapshot of the incident number at notification creation time.</summary>
+    public string? IncidentNumber { get; set; }
 }

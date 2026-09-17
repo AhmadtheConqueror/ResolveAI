@@ -19,6 +19,7 @@ import type {
   TechnicianWorkload,
 } from "../api/api";
 import Sidebar from "../components/Sidebar";
+import { Skeleton, SkeletonTableRow } from "../components/Skeleton";
 
 function readCurrentUser(): CurrentUser | null {
   const storedUser = sessionStorage.getItem("currentUser");
@@ -361,49 +362,84 @@ export default function MyWorkPage() {
           )}
 
           {/* Manager / Admin Workload Overview Panel */}
-          {(isManager || isAdmin) && workload.length > 0 && (
-            <section className="detail-card detail-card-wide workload-card">
-              <div className="workload-card-header">
-                <div>
-                  <h2>Technician Workload</h2>
-                  <p className="subtext">
-                    Active operational capacity across the support engineering team.
-                  </p>
-                </div>
-              </div>
-
-              <div className="workload-grid">
-                {workload.map((wl) => (
-                  <div key={wl.technician.id} className="workload-item">
-                    <div className="workload-tech-info">
-                      <strong>{wl.technician.name}</strong>
-                      <span className="workload-tech-email">
-                        {wl.technician.email}
-                      </span>
-                    </div>
-
-                    <div className="workload-metrics">
-                      <div className="workload-total-pill">
-                        <strong>{wl.activeCount}</strong>
-                        <span>Active</span>
-                      </div>
-
-                      <div className="workload-breakdown">
-                        <span title="Assigned">
-                          Assigned: <strong>{wl.assignedCount}</strong>
-                        </span>
-                        <span title="In Progress">
-                          In Progress: <strong>{wl.inProgressCount}</strong>
-                        </span>
-                        <span title="Waiting for User">
-                          Waiting: <strong>{wl.waitingForUserCount}</strong>
-                        </span>
-                      </div>
-                    </div>
+          {(isManager || isAdmin) && (
+            loading ? (
+              <section className="detail-card detail-card-wide workload-card" aria-busy="true">
+                <span className="sr-only">Loading technician workload...</span>
+                <div className="workload-card-header">
+                  <div>
+                    <h2>Technician Workload</h2>
+                    <p className="subtext">
+                      Active operational capacity across the support engineering team.
+                    </p>
                   </div>
-                ))}
-              </div>
-            </section>
+                </div>
+
+                <div className="workload-grid">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="workload-item" aria-hidden="true">
+                      <div className="workload-tech-info">
+                        <Skeleton width="110px" height={16} style={{ marginBottom: 6 }} />
+                        <Skeleton width="150px" height={12} />
+                      </div>
+
+                      <div className="workload-metrics">
+                        <div className="workload-total-pill">
+                          <Skeleton variant="pill" width={28} height={18} />
+                        </div>
+
+                        <div className="workload-breakdown">
+                          <Skeleton width="140px" height={12} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : workload.length > 0 ? (
+              <section className="detail-card detail-card-wide workload-card">
+                <div className="workload-card-header">
+                  <div>
+                    <h2>Technician Workload</h2>
+                    <p className="subtext">
+                      Active operational capacity across the support engineering team.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="workload-grid">
+                  {workload.map((wl) => (
+                    <div key={wl.technician.id} className="workload-item">
+                      <div className="workload-tech-info">
+                        <strong>{wl.technician.name}</strong>
+                        <span className="workload-tech-email">
+                          {wl.technician.email}
+                        </span>
+                      </div>
+
+                      <div className="workload-metrics">
+                        <div className="workload-total-pill">
+                          <strong>{wl.activeCount}</strong>
+                          <span>Active</span>
+                        </div>
+
+                        <div className="workload-breakdown">
+                          <span title="Assigned">
+                            Assigned: <strong>{wl.assignedCount}</strong>
+                          </span>
+                          <span title="In Progress">
+                            In Progress: <strong>{wl.inProgressCount}</strong>
+                          </span>
+                          <span title="Waiting for User">
+                            Waiting: <strong>{wl.waitingForUserCount}</strong>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null
           )}
 
           {/* Queue Tab Navigation */}
@@ -418,7 +454,11 @@ export default function MyWorkPage() {
                 >
                   All Assigned
                   <span className="queue-tab-badge">
-                    {queueSummary?.allAssignedCount ?? 0}
+                    {loading ? (
+                      <Skeleton variant="pill" width={18} height={14} />
+                    ) : (
+                      queueSummary?.allAssignedCount ?? 0
+                    )}
                   </span>
                 </button>
 
@@ -432,7 +472,11 @@ export default function MyWorkPage() {
                 >
                   Assigned
                   <span className="queue-tab-badge">
-                    {queueSummary?.assignedCount ?? 0}
+                    {loading ? (
+                      <Skeleton variant="pill" width={18} height={14} />
+                    ) : (
+                      queueSummary?.assignedCount ?? 0
+                    )}
                   </span>
                 </button>
 
@@ -446,7 +490,11 @@ export default function MyWorkPage() {
                 >
                   In Progress
                   <span className="queue-tab-badge">
-                    {queueSummary?.inProgressCount ?? 0}
+                    {loading ? (
+                      <Skeleton variant="pill" width={18} height={14} />
+                    ) : (
+                      queueSummary?.inProgressCount ?? 0
+                    )}
                   </span>
                 </button>
 
@@ -460,7 +508,11 @@ export default function MyWorkPage() {
                 >
                   Waiting for User
                   <span className="queue-tab-badge">
-                    {queueSummary?.waitingForUserCount ?? 0}
+                    {loading ? (
+                      <Skeleton variant="pill" width={18} height={14} />
+                    ) : (
+                      queueSummary?.waitingForUserCount ?? 0
+                    )}
                   </span>
                 </button>
 
@@ -474,7 +526,11 @@ export default function MyWorkPage() {
                 >
                   SLA Attention
                   <span className="queue-tab-badge alert">
-                    {queueSummary?.slaAttentionCount ?? 0}
+                    {loading ? (
+                      <Skeleton variant="pill" width={18} height={14} />
+                    ) : (
+                      queueSummary?.slaAttentionCount ?? 0
+                    )}
                   </span>
                 </button>
               </nav>
@@ -490,7 +546,11 @@ export default function MyWorkPage() {
                 >
                   Triage
                   <span className="queue-tab-badge highlight">
-                    {queueSummary?.triageCount ?? 0}
+                    {loading ? (
+                      <Skeleton variant="pill" width={18} height={14} />
+                    ) : (
+                      queueSummary?.triageCount ?? 0
+                    )}
                   </span>
                 </button>
 
@@ -504,7 +564,11 @@ export default function MyWorkPage() {
                 >
                   Unassigned
                   <span className="queue-tab-badge highlight">
-                    {queueSummary?.unassignedCount ?? 0}
+                    {loading ? (
+                      <Skeleton variant="pill" width={18} height={14} />
+                    ) : (
+                      queueSummary?.unassignedCount ?? 0
+                    )}
                   </span>
                 </button>
 
@@ -518,7 +582,11 @@ export default function MyWorkPage() {
                 >
                   SLA Attention
                   <span className="queue-tab-badge alert">
-                    {queueSummary?.slaAttentionCount ?? 0}
+                    {loading ? (
+                      <Skeleton variant="pill" width={18} height={14} />
+                    ) : (
+                      queueSummary?.slaAttentionCount ?? 0
+                    )}
                   </span>
                 </button>
 
@@ -532,7 +600,11 @@ export default function MyWorkPage() {
                 >
                   Active
                   <span className="queue-tab-badge">
-                    {queueSummary?.activeCount ?? 0}
+                    {loading ? (
+                      <Skeleton variant="pill" width={18} height={14} />
+                    ) : (
+                      queueSummary?.activeCount ?? 0
+                    )}
                   </span>
                 </button>
 
@@ -546,7 +618,11 @@ export default function MyWorkPage() {
                 >
                   Resolved / Awaiting Closure
                   <span className="queue-tab-badge">
-                    {queueSummary?.resolvedCount ?? 0}
+                    {loading ? (
+                      <Skeleton variant="pill" width={18} height={14} />
+                    ) : (
+                      queueSummary?.resolvedCount ?? 0
+                    )}
                   </span>
                 </button>
               </nav>
@@ -576,7 +652,13 @@ export default function MyWorkPage() {
                         : managerTab === "resolved"
                           ? "Resolved Incidents Awaiting Closure"
                           : "Active Incidents Operations Queue"}
-                <span className="count-pill">{incidents.length}</span>
+                <span className="count-pill">
+                  {loading ? (
+                    <Skeleton variant="pill" width={22} height={16} />
+                  ) : (
+                    incidents.length
+                  )}
+                </span>
               </h2>
 
               <span className="table-header-meta">
@@ -591,9 +673,53 @@ export default function MyWorkPage() {
             )}
 
             {loading ? (
-              <div className="table-loading-state">
-                <span className="spinner-indicator" aria-hidden="true" />
-                Loading queue items…
+              <div className="table-responsive" aria-busy="true">
+                <span className="sr-only">Loading queue items…</span>
+                <table
+                  className="incident-table queue-table"
+                  aria-label="Queue items"
+                >
+                  <thead>
+                    <tr>
+                      <th scope="col">Incident</th>
+                      <th scope="col">Title</th>
+                      <th scope="col">Priority</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">SLA Status</th>
+                      <th scope="col">Reporter</th>
+                      <th scope="col">
+                        {isTechnician || managerTab !== "unassigned"
+                          ? "Assigned To"
+                          : "Assign"}
+                      </th>
+                      <th scope="col">Updated</th>
+                      {(managerTab === "triage" ||
+                        managerTab === "unassigned") && (
+                        <th scope="col">Quick Action</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 8 }).map((_, idx) => (
+                      <SkeletonTableRow
+                        key={idx}
+                        columns={[
+                          { width: "90px" },
+                          { width: "85%" },
+                          { width: "70px", variant: "badge", height: 24 },
+                          { width: "75px", variant: "badge", height: 24 },
+                          { width: "70px", variant: "badge", height: 24 },
+                          { width: "95px" },
+                          { width: "90px" },
+                          { width: "75px" },
+                          ...((managerTab === "triage" || managerTab === "unassigned")
+                            ? [{ width: "85px", variant: "button" as const, height: 32 }]
+                            : []),
+                        ]}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : incidents.length === 0 ? (
               <div className="table-empty-state">
