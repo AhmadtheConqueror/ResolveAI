@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="ResolveAI.Api">
+      <HintPath>..\ResolveAI.Api\bin\Debug\net10.0\ResolveAI.Api.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="VSTest">
+    <Exec Command="dotnet $(TargetPath)" />
+  </Target>
+
+  <Target Name="Test">
+    <Exec Command="dotnet $(TargetPath)" />
+  </Target>
+
+</Project>

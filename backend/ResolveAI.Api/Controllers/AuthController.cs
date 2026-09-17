@@ -1,33 +1,36 @@
 using Microsoft.AspNetCore.Identity;
-using ResolveAI.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ResolveAI.Api.Data;
 using ResolveAI.Api.DTOs;
 using ResolveAI.Api.Entities;
+using ResolveAI.Api.Services;
 
 namespace ResolveAI.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-
 public class AuthController : ControllerBase
 {
     private readonly ITokenService _tokenService;
     private readonly AppDbContext _context;
     private readonly IPasswordHasher<AppUser> _passwordHasher;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<AuthController> _logger;
 
     public AuthController(
         AppDbContext context,
         IPasswordHasher<AppUser> passwordHasher,
         ITokenService tokenService,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ILogger<AuthController> logger)
     {
         _context = context;
         _passwordHasher = passwordHasher;
         _tokenService = tokenService;
         _configuration = configuration;
+        _logger = logger;
     }
 
     [HttpPost("register")]
@@ -107,58 +110,65 @@ public class AuthController : ControllerBase
             role = employeeRole.Name
         });
     }
+
     [HttpPost("login")]
-public async Task<IActionResult> Login(LoginRequest request)
-{
-    var email = request.Email.Trim().ToLowerInvariant();
-
-    var user = await _context.Users
-        .Include(u => u.Role)
-        .SingleOrDefaultAsync(u => u.Email == email);
-
-    if (user is null)
+    [EnableRateLimiting("login-limiter")]
+    public async Task<IActionResult> Login(LoginRequest request)
     {
-        return Unauthorized(new
+        var email = request.Email.Trim().ToLowerInvariant();
+
+        var user = await _context.Users
+            .Include(u => u.Role)
+            .SingleOrDefaultAsync(u => u.Email == email);
+
+        if (user is null)
         {
-            message = "Invalid email or password."
-        });
-    }
-
-    if (!user.IsActive)
-    {
-        return Unauthorized(new
-        {
-            message = "This account is inactive."
-        });
-    }
-
-    var passwordResult = _passwordHasher.VerifyHashedPassword(
-        user,
-        user.PasswordHash,
-        request.Password
-    );
-
-    if (passwordResult == PasswordVerificationResult.Failed)
-    {
-        return Unauthorized(new
-        {
-            message = "Invalid email or password."
-        });
-    }
-
-    var token = _tokenService.CreateToken(user);
-
-    return Ok(new
-    {
-        token,
-        user = new
-        {
-            id = user.Id,
-            firstName = user.FirstName,
-            lastName = user.LastName,
-            email = user.Email,
-            role = user.Role.Name
+            _logger.LogWarning("Login failed for {Email}: account not found.", email);
+            return Unauthorized(new
+            {
+                message = "Invalid email or password."
+            });
         }
-    });
-}
+
+        if (!user.IsActive)
+        {
+            _logger.LogWarning("Login failed for user {UserId} ({Email}): account is inactive.", user.Id, email);
+            return Unauthorized(new
+            {
+                message = "Invalid email or password."
+            });
+        }
+
+        var passwordResult = _passwordHasher.VerifyHashedPassword(
+            user,
+            user.PasswordHash,
+            request.Password
+        );
+
+        if (passwordResult == PasswordVerificationResult.Failed)
+        {
+            _logger.LogWarning("Login failed for user {UserId} ({Email}): invalid password.", user.Id, email);
+            return Unauthorized(new
+            {
+                message = "Invalid email or password."
+            });
+        }
+
+        _logger.LogInformation("Successful login for user {UserId} ({Email}) with role {Role}.", user.Id, email, user.Role.Name);
+
+        var token = _tokenService.CreateToken(user);
+
+        return Ok(new
+        {
+            token,
+            user = new
+            {
+                id = user.Id,
+                firstName = user.FirstName,
+                lastName = user.LastName,
+                email = user.Email,
+                role = user.Role.Name
+            }
+        });
+    }
 }

@@ -1,5 +1,5 @@
 const DEFAULT_API_URL = "http://localhost:5151";
-const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+const configuredApiUrl = import.meta.env?.VITE_API_URL?.trim();
 const API_URL = (configuredApiUrl || DEFAULT_API_URL).replace(/\/+$/, "");
 
 type ApiErrorKind =
@@ -8,6 +8,7 @@ type ApiErrorKind =
   | "validation"
   | "network"
   | "not_found"
+  | "rate_limit"
   | "server";
 
 export class ApiError extends Error {
@@ -389,6 +390,13 @@ export function isValidationError(error: unknown) {
   );
 }
 
+export function isRateLimitError(error: unknown) {
+  return (
+    error instanceof ApiError &&
+    (error.kind === "rate_limit" || error.status === 429)
+  );
+}
+
 function isLoginResponse(value: unknown): value is LoginResponse {
   if (
     !isRecord(value) ||
@@ -456,6 +464,14 @@ export async function login(email: string, password: string) {
     );
   }
 
+  if (response.status === 429) {
+    throw new ApiError(
+      "rate_limit",
+      "Too many login attempts. Please try again shortly.",
+      response.status
+    );
+  }
+
   if (!response.ok) {
     throw new ApiError(
       "server",
@@ -505,22 +521,28 @@ async function readErrorMessage(
   try {
     const data: unknown = await response.json();
 
-    if (
-      isRecord(data) &&
-      typeof data.message === "string" &&
-      data.message.trim()
-    ) {
-      return data.message;
-    }
+    if (isRecord(data)) {
+      if (typeof data.detail === "string" && data.detail.trim()) {
+        return data.detail.trim();
+      }
 
-    if (isRecord(data) && isRecord(data.errors)) {
-      for (const value of Object.values(data.errors)) {
-        if (
-          Array.isArray(value) &&
-          typeof value[0] === "string" &&
-          value[0].trim()
-        ) {
-          return value[0];
+      if (typeof data.message === "string" && data.message.trim()) {
+        return data.message.trim();
+      }
+
+      if (typeof data.title === "string" && data.title.trim()) {
+        return data.title.trim();
+      }
+
+      if (isRecord(data.errors)) {
+        for (const value of Object.values(data.errors)) {
+          if (
+            Array.isArray(value) &&
+            typeof value[0] === "string" &&
+            value[0].trim()
+          ) {
+            return value[0].trim();
+          }
         }
       }
     }
@@ -552,9 +574,14 @@ async function requestJson<T>(
   }
 
   if (response.status === 401) {
+    sessionStorage.removeItem("accessToken");
+    sessionStorage.removeItem("currentUser");
     throw new ApiError(
       "auth",
-      "Session expired. Please sign in again.",
+      await readErrorMessage(
+        response,
+        "Session expired. Please sign in again."
+      ),
       response.status
     );
   }
@@ -564,7 +591,18 @@ async function requestJson<T>(
       "forbidden",
       await readErrorMessage(
         response,
-        messages.forbidden ?? "FORBIDDEN"
+        messages.forbidden ?? "Access denied."
+      ),
+      response.status
+    );
+  }
+
+  if (response.status === 429) {
+    throw new ApiError(
+      "rate_limit",
+      await readErrorMessage(
+        response,
+        "Too many requests. Please try again shortly."
       ),
       response.status
     );
@@ -586,7 +624,7 @@ async function requestJson<T>(
       "not_found",
       await readErrorMessage(
         response,
-        messages.notFound ?? "NOT_FOUND"
+        messages.notFound ?? "Not found."
       ),
       response.status
     );

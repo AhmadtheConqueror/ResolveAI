@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ResolveAI.Api.Data;
 using ResolveAI.Api.DTOs;
@@ -1095,6 +1096,7 @@ public class IncidentsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/ai-analysis")]
+    [EnableRateLimiting("ai-limiter")]
     public async Task<IActionResult> RunAIAnalysis(Guid id)
     {
         if (!TryGetAuthenticatedUser(out var userId, out var role))
