@@ -18,6 +18,14 @@ public interface IIncidentAuditService
         Guid actorUserId,
         CancellationToken cancellationToken = default);
 
+    Task RecordStatusChangedAsync(
+        Incident incident,
+        IncidentStatus oldStatus,
+        IncidentStatus newStatus,
+        Guid actorUserId,
+        string? reason,
+        CancellationToken cancellationToken = default);
+
     Task RecordFirstResponseRecordedAsync(
         Incident incident,
         Guid actorUserId,

@@ -22,6 +22,8 @@ public class AppUser
 
     public bool IsActive { get; set; } = true;
 
+    public bool EmailNotificationsEnabled { get; set; } = true;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<IncidentComment> IncidentComments { get; set; } =

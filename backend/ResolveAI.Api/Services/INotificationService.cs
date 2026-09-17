@@ -17,6 +17,14 @@ public interface INotificationService
         bool wasReassignment,
         CancellationToken cancellationToken = default);
 
+    Task QueueIncidentAssignedAsync(
+        Incident incident,
+        AppUser technician,
+        Guid actorUserId,
+        bool wasReassignment,
+        string? previousAssigneeName,
+        CancellationToken cancellationToken = default);
+
     Task QueueIncidentCommentAddedAsync(
         Incident incident,
         AppUser author,
@@ -44,5 +52,8 @@ public interface INotificationService
 
     Task QueueSlaNotificationsForActiveIncidentsAsync(
         DateTime timestamp,
+        CancellationToken cancellationToken = default);
+
+    Task StagePendingExternalDeliveriesAsync(
         CancellationToken cancellationToken = default);
 }

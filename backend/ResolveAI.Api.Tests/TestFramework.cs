@@ -46,6 +46,19 @@ public static class Assert
             throw new AssertionException($"Expected string to contain '{expectedSubstring}', but was: '{actualString}'");
     }
 
+    public static void DoesNotContain(string unexpectedSubstring, string actualString)
+    {
+        if (actualString.Contains(unexpectedSubstring, StringComparison.OrdinalIgnoreCase))
+            throw new AssertionException($"Expected string NOT to contain '{unexpectedSubstring}', but it did: '{actualString}'");
+    }
+
+    public static void Single<T>(IEnumerable<T> collection)
+    {
+        var count = collection.Count();
+        if (count != 1)
+            throw new AssertionException($"Expected collection to contain exactly 1 element, but contained {count}.");
+    }
+
     public static T Throws<T>(Action action) where T : Exception
     {
         try

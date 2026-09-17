@@ -43,7 +43,7 @@ type UiNotice = {
 type StatusAction = {
   label: string;
   status: IncidentStatus;
-  tone?: "primary" | "secondary" | "success";
+  tone?: "primary" | "secondary" | "success" | "danger";
 };
 
 type ActivityChange = {
@@ -58,6 +58,8 @@ type ActivityMetadata = {
   targetMinutes?: number | null;
   remainingMinutes?: number | null;
   overdueMinutes?: number | null;
+  reason?: string | null;
+  isAdministrativeClosure?: boolean | null;
 };
 
 const ACTIVITY_PAGE_SIZE = 20;
@@ -452,34 +454,21 @@ function getStatusActions(
           status: "Triaged",
           tone: "primary",
         },
+        {
+          label: "Administrative Close",
+          status: "Closed",
+          tone: "danger",
+        },
       ];
+    case "Triaged":
     case "Assigned":
-      return [
-        {
-          label: "Start Work",
-          status: "InProgress",
-          tone: "primary",
-        },
-      ];
     case "InProgress":
-      return [
-        {
-          label: "Waiting for User",
-          status: "WaitingForUser",
-          tone: "secondary",
-        },
-        {
-          label: "Resolve Incident",
-          status: "Resolved",
-          tone: "success",
-        },
-      ];
     case "WaitingForUser":
       return [
         {
-          label: "Resume Work",
-          status: "InProgress",
-          tone: "primary",
+          label: "Administrative Close",
+          status: "Closed",
+          tone: "danger",
         },
       ];
     case "Resolved":
@@ -547,6 +536,11 @@ export default function IncidentDetailsPage() {
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [resolutionText, setResolutionText] = useState("");
   const [resolveError, setResolveError] = useState("");
+
+  // Administrative close modal state
+  const [showAdminCloseModal, setShowAdminCloseModal] = useState(false);
+  const [adminCloseReason, setAdminCloseReason] = useState("");
+  const [adminCloseError, setAdminCloseError] = useState("");
 
   const handleUnauthorized = useCallback(() => {
     sessionStorage.clear();
@@ -755,7 +749,8 @@ export default function IncidentDetailsPage() {
 
   async function handleStatusUpdate(
     status: IncidentStatus,
-    customResolution?: string
+    customResolution?: string,
+    closureReason?: string
   ) {
     if (!id) {
       return;
@@ -768,16 +763,25 @@ export default function IncidentDetailsPage() {
       return;
     }
 
+    if (status === "Closed" && incident?.status !== "Resolved" && !closureReason) {
+      setShowAdminCloseModal(true);
+      setAdminCloseReason("");
+      setAdminCloseError("");
+      return;
+    }
+
     setActionBusy(status);
     setWorkflowNotice(null);
 
     try {
-      await updateIncidentStatus(id, status, customResolution);
+      await updateIncidentStatus(id, status, customResolution, closureReason);
       await refreshIncidentAndActivity();
 
       setWorkflowNotice({
         tone: "success",
-        message: `Status updated to ${formatStatusLabel(status)}.`,
+        message: status === "Closed" && incident?.status !== "Resolved"
+          ? "Incident administratively closed."
+          : `Status updated to ${formatStatusLabel(status)}.`,
       });
     } catch (error) {
       if (isUnauthorizedError(error)) {
@@ -805,6 +809,16 @@ export default function IncidentDetailsPage() {
     const note = resolutionText.trim();
     setShowResolveModal(false);
     await handleStatusUpdate("Resolved", note);
+  }
+
+  async function handleConfirmAdminClose() {
+    if (!adminCloseReason.trim() || adminCloseReason.trim().length < 3) {
+      setAdminCloseError("A closure reason (at least 3 characters) is required.");
+      return;
+    }
+    const reason = adminCloseReason.trim();
+    setShowAdminCloseModal(false);
+    await handleStatusUpdate("Closed", undefined, reason);
   }
 
   async function handleAssignTechnician(
@@ -1633,6 +1647,7 @@ export default function IncidentDetailsPage() {
                       <>
                         <ol className="activity-list">
                           {activityItems.map((activity) => {
+                            const metadata = getActivityMetadata(activity);
                             const changes = getActivityChanges(activity);
                             const slaDetail = getActivitySlaDetail(activity);
 
@@ -1685,6 +1700,12 @@ export default function IncidentDetailsPage() {
                                   {slaDetail && (
                                     <p className="activity-detail-line">
                                       {slaDetail}
+                                    </p>
+                                  )}
+
+                                  {metadata?.reason && (
+                                    <p className="activity-reason">
+                                      <strong>Reason:</strong> {metadata.reason}
                                     </p>
                                   )}
 
@@ -2328,6 +2349,86 @@ export default function IncidentDetailsPage() {
                   {actionBusy === "Resolved"
                     ? "Resolving…"
                     : "Confirm & Mark Resolved"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showAdminCloseModal && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-close-modal-title"
+        >
+          <div className="modal-card resolve-modal-card">
+            <div className="modal-header">
+              <div>
+                <h2 id="admin-close-modal-title">Administrative Closure</h2>
+                <p>Terminate this incident without normal technician resolution.</p>
+              </div>
+              <button
+                type="button"
+                className="close-button"
+                onClick={() => setShowAdminCloseModal(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleConfirmAdminClose();
+              }}
+            >
+              {adminCloseError && (
+                <div className="inline-notice error" role="alert">
+                  {adminCloseError}
+                </div>
+              )}
+
+              <div className="form-field">
+                <label htmlFor="admin-close-reason-input">
+                  Closure Reason <span className="required-marker">*</span>
+                </label>
+                <textarea
+                  id="admin-close-reason-input"
+                  className="resolve-textarea"
+                  rows={4}
+                  placeholder="e.g. Duplicate of INC-20260917-ABC123, invalid request, or created in error."
+                  value={adminCloseReason}
+                  onChange={(e) => {
+                    setAdminCloseReason(e.target.value);
+                    if (adminCloseError) setAdminCloseError("");
+                  }}
+                  required
+                />
+                <span className="field-hint">
+                  A reason is mandatory and will be permanently recorded in the incident activity history.
+                </span>
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="workflow-button secondary"
+                  onClick={() => setShowAdminCloseModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  id="confirm-admin-close-btn"
+                  className="workflow-button danger"
+                  disabled={actionBusy !== null}
+                >
+                  {actionBusy === "Closed"
+                    ? "Closing…"
+                    : "Confirm Administrative Close"}
                 </button>
               </div>
             </form>

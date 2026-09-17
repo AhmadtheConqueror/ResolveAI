@@ -11,6 +11,7 @@ using ResolveAI.Api.Data;
 using ResolveAI.Api.Diagnostics;
 using ResolveAI.Api.Entities;
 using ResolveAI.Api.Middleware;
+using ResolveAI.Api.Models.Email;
 using ResolveAI.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -32,6 +33,22 @@ builder.Services.AddScoped<ISlaService, SlaService>();
 builder.Services.AddScoped<IIncidentAuditService, IncidentAuditService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddHostedService<SlaNotificationBackgroundService>();
+
+// External Email Notifications
+builder.Services.Configure<ResendOptions>(
+    builder.Configuration.GetSection(ResendOptions.SectionName));
+builder.Services.Configure<ExternalNotificationOptions>(
+    builder.Configuration.GetSection(ExternalNotificationOptions.SectionName));
+builder.Services.Configure<BrandingOptions>(
+    builder.Configuration.GetSection(BrandingOptions.SectionName));
+
+builder.Services.AddSingleton<IEmailTemplateService, EmailTemplateService>();
+builder.Services.AddScoped<IExternalNotificationDeliveryProcessor, ExternalNotificationDeliveryProcessor>();
+builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHostedService<ExternalNotificationDeliveryWorker>();
 
 builder.Services
     .AddHttpClient<IAIIncidentService, GeminiIncidentService>(client =>

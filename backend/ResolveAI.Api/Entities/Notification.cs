@@ -37,4 +37,7 @@ public class Notification
 
     /// <summary>Snapshot of the incident number at notification creation time.</summary>
     public string? IncidentNumber { get; set; }
+
+    public ICollection<ExternalNotificationDelivery> ExternalDeliveries { get; set; } =
+        new List<ExternalNotificationDelivery>();
 }

@@ -922,7 +922,8 @@ export async function assignIncident(
 export async function updateIncidentStatus(
   incidentId: string,
   status: IncidentStatus,
-  resolution?: string
+  resolution?: string,
+  reason?: string
 ) {
   return requestJson<IncidentStatusUpdate>(
     `/api/incidents/${incidentId}/status`,
@@ -935,6 +936,7 @@ export async function updateIncidentStatus(
       body: JSON.stringify({
         status,
         resolution: resolution?.trim() || undefined,
+        reason: reason?.trim() || undefined,
       }),
     },
     {

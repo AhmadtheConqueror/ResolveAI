@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<IncidentAIAnalysis> IncidentAIAnalyses => Set<IncidentAIAnalysis>();
     public DbSet<IncidentAuditEvent> IncidentAuditEvents => Set<IncidentAuditEvent>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<ExternalNotificationDelivery> ExternalNotificationDeliveries => Set<ExternalNotificationDelivery>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -51,6 +52,10 @@ public class AppDbContext : DbContext
             .HasOne(u => u.Department)
             .WithMany(d => d.Users)
             .HasForeignKey(u => u.DepartmentId);
+
+        modelBuilder.Entity<AppUser>()
+            .Property(u => u.EmailNotificationsEnabled)
+            .HasDefaultValue(true);
 
         // -------------------------
         // Categories
@@ -309,6 +314,60 @@ public class AppDbContext : DbContext
             })
             .IsUnique()
             .HasFilter("\"DeduplicationKey\" IS NOT NULL");
+
+        // -------------------------
+        // External Notification Deliveries
+        // -------------------------
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .Property(d => d.Channel)
+            .HasConversion<string>()
+            .HasMaxLength(40);
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .Property(d => d.Status)
+            .HasConversion<string>()
+            .HasMaxLength(40);
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .Property(d => d.RecipientAddress)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .Property(d => d.Provider)
+            .HasMaxLength(60);
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .Property(d => d.ProviderMessageId)
+            .HasMaxLength(120);
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .Property(d => d.LastError)
+            .HasMaxLength(1000);
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .Property(d => d.IdempotencyKey)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .HasOne(d => d.Notification)
+            .WithMany(n => n.ExternalDeliveries)
+            .HasForeignKey(d => d.NotificationId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .HasIndex(d => new
+            {
+                d.Status,
+                d.NextAttemptAt
+            });
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .HasIndex(d => d.IdempotencyKey)
+            .IsUnique();
+
+        modelBuilder.Entity<ExternalNotificationDelivery>()
+            .HasIndex(d => d.NotificationId);
 
         // -------------------------
         // Seed Roles

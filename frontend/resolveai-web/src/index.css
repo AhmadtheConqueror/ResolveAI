@@ -912,6 +912,26 @@ select:disabled {
   background: #115e59;
 }
 
+.workflow-button.danger {
+  color: #ffffff;
+  background: var(--danger);
+}
+
+.workflow-button.danger:hover {
+  background: #991b1b;
+}
+
+.activity-reason {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  background: #fef2f2;
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+  font-size: 0.82rem;
+  color: #991b1b;
+  line-height: 1.4;
+}
+
 .assignment-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

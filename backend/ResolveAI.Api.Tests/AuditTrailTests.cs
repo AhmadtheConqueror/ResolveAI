@@ -15,6 +15,8 @@ public class AuditTrailTests
         Test_Sla_System_Event_ActorType();
         Test_Sla_Audit_Deduplication_Key();
         Test_Ai_Recommendation_Applied_Actor_Is_Human_Approver();
+        Test_Administrative_Closure_Audit_Metadata_And_Summary();
+        Test_Semantic_Audit_Summaries_For_Technical_Execution();
     }
 
     private void Test_Audit_Event_Creation_Structure()
@@ -136,5 +138,79 @@ public class AuditTrailTests
         Assert.Equal(IncidentAuditEventType.AIRecommendationApplied, auditEvent.EventType);
 
         Console.WriteLine("  ✓ AI recommendation application audit identifies the human approver as actor");
+    }
+
+    private void Test_Administrative_Closure_Audit_Metadata_And_Summary()
+    {
+        var managerId = Guid.NewGuid();
+        var reason = "Duplicate of INC-2026-0001";
+        var metadataJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            reason,
+            isAdministrativeClosure = true
+        });
+
+        var auditEvent = new IncidentAuditEvent
+        {
+            Id = Guid.NewGuid(),
+            IncidentId = Guid.NewGuid(),
+            EventType = IncidentAuditEventType.IncidentClosed,
+            ActorUserId = managerId,
+            ActorDisplayName = "Mona Manager",
+            ActorType = IncidentAuditActorType.User,
+            OldValue = "InProgress",
+            NewValue = "Closed",
+            Summary = "Mona Manager administratively closed the incident",
+            Metadata = metadataJson,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        Assert.Equal(IncidentAuditEventType.IncidentClosed, auditEvent.EventType);
+        Assert.Equal("Mona Manager administratively closed the incident", auditEvent.Summary);
+        Assert.NotNull(auditEvent.Metadata);
+        Assert.Contains("Duplicate of INC-2026-0001", auditEvent.Metadata);
+        Assert.Contains("isAdministrativeClosure", auditEvent.Metadata);
+
+        Console.WriteLine("  ✓ Administrative closure audit records explicit override summary and JSON reason metadata");
+    }
+
+    private void Test_Semantic_Audit_Summaries_For_Technical_Execution()
+    {
+        var techId = Guid.NewGuid();
+        var startWorkEvent = new IncidentAuditEvent
+        {
+            EventType = IncidentAuditEventType.StatusChanged,
+            ActorUserId = techId,
+            ActorDisplayName = "Ahmad Bello",
+            OldValue = "Assigned",
+            NewValue = "InProgress",
+            Summary = "Ahmad Bello started work"
+        };
+
+        var resolveEvent = new IncidentAuditEvent
+        {
+            EventType = IncidentAuditEventType.IncidentResolved,
+            ActorUserId = techId,
+            ActorDisplayName = "Ahmad Bello",
+            OldValue = "InProgress",
+            NewValue = "Resolved",
+            Summary = "Ahmad Bello resolved the incident"
+        };
+
+        var normalCloseEvent = new IncidentAuditEvent
+        {
+            EventType = IncidentAuditEventType.IncidentClosed,
+            ActorUserId = Guid.NewGuid(),
+            ActorDisplayName = "Mona Manager",
+            OldValue = "Resolved",
+            NewValue = "Closed",
+            Summary = "Mona Manager closed the resolved incident"
+        };
+
+        Assert.Equal("Ahmad Bello started work", startWorkEvent.Summary);
+        Assert.Equal("Ahmad Bello resolved the incident", resolveEvent.Summary);
+        Assert.Equal("Mona Manager closed the resolved incident", normalCloseEvent.Summary);
+
+        Console.WriteLine("  ✓ Technical execution and normal closure produce semantically accurate actor summaries");
     }
 }

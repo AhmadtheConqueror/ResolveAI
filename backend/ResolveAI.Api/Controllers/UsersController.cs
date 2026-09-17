@@ -106,6 +106,7 @@ public class UsersController : ControllerBase
                         name = u.Department.Name
                     },
                 isActive = u.IsActive,
+                emailNotificationsEnabled = u.EmailNotificationsEnabled,
                 createdAt = u.CreatedAt
             })
             .ToListAsync();
@@ -165,6 +166,7 @@ public class UsersController : ControllerBase
             Email = email,
             RoleId = role.Id,
             DepartmentId = request.DepartmentId,
+            EmailNotificationsEnabled = request.EmailNotificationsEnabled ?? true,
             IsActive = true
         };
 
@@ -185,6 +187,7 @@ public class UsersController : ControllerBase
                 lastName = user.LastName,
                 email = user.Email,
                 role = new { id = role.Id, name = role.Name },
+                emailNotificationsEnabled = user.EmailNotificationsEnabled,
                 isActive = user.IsActive,
                 createdAt = user.CreatedAt
             }
@@ -272,6 +275,11 @@ public class UsersController : ControllerBase
         user.RoleId = role.Id;
         user.DepartmentId = request.DepartmentId;
 
+        if (request.EmailNotificationsEnabled.HasValue)
+        {
+            user.EmailNotificationsEnabled = request.EmailNotificationsEnabled.Value;
+        }
+
         await _context.SaveChangesAsync();
 
         return Ok(new
@@ -284,6 +292,7 @@ public class UsersController : ControllerBase
             department = user.Department == null
                 ? null
                 : new { id = user.Department.Id, name = user.Department.Name },
+            emailNotificationsEnabled = user.EmailNotificationsEnabled,
             isActive = user.IsActive
         });
     }

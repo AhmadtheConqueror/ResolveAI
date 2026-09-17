@@ -8,4 +8,6 @@ public class UpdateIncidentStatusRequest
     public string Status { get; set; } = string.Empty;
 
     public string? Resolution { get; set; }
+
+    public string? Reason { get; set; }
 }

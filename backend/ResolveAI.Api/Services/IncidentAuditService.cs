@@ -46,11 +46,28 @@ public class IncidentAuditService : IIncidentAuditService
             cancellationToken);
     }
 
+    public Task RecordStatusChangedAsync(
+        Incident incident,
+        IncidentStatus oldStatus,
+        IncidentStatus newStatus,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        return RecordStatusChangedAsync(
+            incident,
+            oldStatus,
+            newStatus,
+            actorUserId,
+            reason: null,
+            cancellationToken);
+    }
+
     public async Task RecordStatusChangedAsync(
         Incident incident,
         IncidentStatus oldStatus,
         IncidentStatus newStatus,
         Guid actorUserId,
+        string? reason,
         CancellationToken cancellationToken = default)
     {
         if (oldStatus == newStatus)
@@ -58,13 +75,42 @@ public class IncidentAuditService : IIncidentAuditService
             return;
         }
 
-        var (eventType, summary) = newStatus switch
+        var actorName = await GetUserDisplayNameAsync(
+            actorUserId,
+            cancellationToken);
+
+        var isAdministrativeClosure = newStatus == IncidentStatus.Closed &&
+            oldStatus != IncidentStatus.Resolved;
+
+        var (eventType, summary) = (oldStatus, newStatus) switch
         {
-            IncidentStatus.Triaged => (IncidentAuditEventType.IncidentTriaged, "Incident triaged"),
-            IncidentStatus.Resolved => (IncidentAuditEventType.IncidentResolved, "Incident resolved"),
-            IncidentStatus.Closed => (IncidentAuditEventType.IncidentClosed, "Incident closed"),
-            _ => (IncidentAuditEventType.StatusChanged, "Status changed")
+            (IncidentStatus.Assigned, IncidentStatus.InProgress) =>
+                (IncidentAuditEventType.StatusChanged, $"{actorName} started work"),
+            (IncidentStatus.WaitingForUser, IncidentStatus.InProgress) =>
+                (IncidentAuditEventType.StatusChanged, $"{actorName} resumed work"),
+            (_, IncidentStatus.WaitingForUser) =>
+                (IncidentAuditEventType.StatusChanged, $"{actorName} marked waiting for user"),
+            (IncidentStatus.Open, IncidentStatus.Triaged) =>
+                (IncidentAuditEventType.IncidentTriaged, $"{actorName} triaged the incident"),
+            (_, IncidentStatus.Resolved) =>
+                (IncidentAuditEventType.IncidentResolved, $"{actorName} resolved the incident"),
+            (IncidentStatus.Resolved, IncidentStatus.Closed) =>
+                (IncidentAuditEventType.IncidentClosed, $"{actorName} closed the resolved incident"),
+            _ when isAdministrativeClosure =>
+                (IncidentAuditEventType.IncidentClosed, $"{actorName} administratively closed the incident"),
+            _ =>
+                (IncidentAuditEventType.StatusChanged, $"{actorName} changed status to {FormatStatus(newStatus)}")
         };
+
+        string? metadata = null;
+        if (isAdministrativeClosure && !string.IsNullOrWhiteSpace(reason))
+        {
+            metadata = SerializeMetadata(new
+            {
+                reason = reason.Trim(),
+                isAdministrativeClosure = true
+            });
+        }
 
         await AddUserEventAsync(
             incident.Id,
@@ -73,7 +119,7 @@ public class IncidentAuditService : IIncidentAuditService
             actorUserId,
             FormatStatus(oldStatus),
             FormatStatus(newStatus),
-            null,
+            metadata,
             null,
             incident.UpdatedAt,
             cancellationToken);

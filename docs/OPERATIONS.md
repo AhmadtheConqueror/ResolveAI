@@ -31,6 +31,13 @@ Configuration keys can be provided via environment variables in production (usin
 | `Gemini:ApiKey` | Google Gemini API Key for AI Incident Analysis | Optional | API key string (AI features disabled/mocked if omitted) |
 | `Features:AllowPublicRegistration` | Disables/enables self-registration | No (default `false`) | `false` |
 | `Frontend:AllowedOrigins` | Allowed CORS origins for frontend client | Yes | `http://localhost:5173` or `https://resolveai.yourdomain.com` |
+| `Frontend:BaseUrl` | Frontend client base URL for email action links | Yes | `http://localhost:5173` |
+| `ExternalNotifications:EmailEnabled` | Master toggle for external email dispatching | No (default `false`) | `false` (in dev), `true` (in prod) |
+| `ExternalNotifications:OverrideRecipient` | Safe development recipient override | No | `delivered@resend.dev` (never in prod) |
+| `Resend:ApiKey` | Resend REST API authorization key | Yes (if email enabled) | `re_...` (never committed) |
+| `Resend:FromAddress` | Verified sending email address | Yes (if email enabled) | `notifications@resolveai.dev` |
+| `Resend:FromName` | Sender display name | No | `ResolveAI Notifications` |
+| `Resend:Enabled` | Provider-level toggle | No (default `false`) | `true` |
 
 > [!IMPORTANT]
 > **Production Startup Validation**:
@@ -60,11 +67,54 @@ dotnet ef database update
 ### Migration Chain History Note
 - Migration `20260916145517_AddNotificationIncidentSnapshot` was initially generated empty.
 - Migration `20260917102511_AddIncidentAuditTrail` subsequently picked up and created the `IncidentNumber` and `IncidentTitle` columns on the `Notifications` table.
+- Migration `20260917123800_AddExternalEmailNotifications` created the `ExternalNotificationDeliveries` table and added `EmailNotificationsEnabled` to `Users`.
 - **Rule**: Never retroactively modify or delete applied migrations in source control. The current model snapshot and migration chain are fully aligned.
 
 ---
 
-## 4. Backup & Disaster Recovery
+## 4. External Email Notifications (Resend)
+
+ResolveAI provides transactional email notifications built on top of the in-app notification system.
+
+### Architectural Principles
+1. **In-App Remains Source of Truth**: In-app notifications are persisted and functional independently of external email delivery.
+2. **Failure Isolation**: Email delivery staging or provider failures **NEVER** fail or rollback business transactions (incident creation, assignment, comments, status changes, resolution, SLA processing, or audit history).
+3. **Provider Abstraction**: ResolveAI business logic depends on `IEmailSender`. Resend is the first implementation, communicating over HTTPS using `HttpClient` (`POST https://api.resend.com/emails`).
+4. **Asynchronous Dispatch**: High-value notifications stage an `ExternalNotificationDelivery` row with `Status = Pending`. A background worker (`ExternalNotificationDeliveryWorker`) claims and sends deliveries asynchronously.
+
+### Email Eligibility Matrix
+Only high-value, actionable notifications trigger email deliveries:
+- **Employee / Reporter**: Incident assigned/reassigned, reply from Technician/Manager/Admin, incident resolved, incident closed.
+- **Technician**: Incident assigned/reassigned to them, reply from Reporter, SLA At Risk on assigned incident, SLA Breached on assigned incident.
+- **Manager / Admin Fallback**: New incident requiring triage, reporter reply on unassigned incident, SLA At Risk, SLA Breached.
+- **Non-Email Events**: Status updates (e.g. `InProgress`, `WaitingForUser`), priority adjustments, and internal technician banter remain in-app only.
+
+### Retry Policy & Idempotency
+- Deliveries use stable, deterministic idempotency keys: `email/{notificationId}/{userId}`.
+- Resend `Idempotency-Key` headers are transmitted on all calls, preventing duplicate sends on network retries.
+- Retry Schedule for transient failures (HTTP 429, 5xx, timeouts):
+  - Attempt 1: Immediate/next poll
+  - Attempt 2: +1 minute
+  - Attempt 3: +5 minutes
+  - Attempt 4: +30 minutes
+  - After 4 attempts or permanent errors (4xx validation/unauthorized): marked `PermanentlyFailed`.
+
+### Safe Development & Test Controls
+- `ExternalNotifications:EmailEnabled` defaults to `false`. No external sending occurs unless explicitly enabled.
+- `ExternalNotifications:OverrideRecipient` (e.g. `delivered@resend.dev`): When running in `Development`, all outbound emails are redirected to this address, preventing accidental customer emails during testing.
+- Manual smoke test command:
+  ```powershell
+  dotnet run --no-restore --project backend/ResolveAI.Api.Tests -- --smoke-test
+  ```
+
+### Admin Diagnostics API
+Admins can monitor email delivery status via `GET /api/admin/external-notifications`:
+- Returns recent delivery status, attempt counts, timestamps, provider message IDs, and error summaries.
+- Strictly excludes API keys, authorization headers, or provider secrets.
+
+---
+
+## 5. Backup & Disaster Recovery
 
 ResolveAI deliberately delegates backup automation to the database hosting layer (e.g. AWS RDS, Azure Database for PostgreSQL, Google Cloud SQL, or automated cron jobs).
 
@@ -89,7 +139,7 @@ psql -h <host> -p 5432 -U <username> -d resolveai -f "resolveai_backup.sql"
 
 ---
 
-## 5. Health Probes & Monitoring
+## 6. Health Probes & Monitoring
 
 ResolveAI exposes standard health check endpoints:
 
@@ -104,12 +154,12 @@ ResolveAI exposes standard health check endpoints:
 - **Response**: `200 OK` (`Healthy`) if database connection is confirmed; `503 Service Unavailable` if database is down.
 
 > [!NOTE]
-> **AI Dependency Isolation**:
-> External AI providers (Google Gemini) are intentionally excluded from the readiness probe. A third-party AI service outage or rate-limit must not mark the incident management system as unhealthy.
+> **Third-Party Dependency Isolation**:
+> External services (Google Gemini AI and Resend Email) are intentionally excluded from the readiness probe. A third-party outage, rate-limit, or unconfigured key must not mark ResolveAI as down.
 
 ---
 
-## 6. Security Hardening Details
+## 7. Security Hardening Details
 
 ### 1. Per-Request User & Role Validation
 Stateless JWT tokens present a known limitation: if an Admin deactivates a user or demotes their role, an existing token remains valid until expiry.
@@ -139,23 +189,24 @@ All responses include standard defense-in-depth headers:
 
 ---
 
-## 7. Automated Testing Strategy
+## 8. Automated Testing Strategy
 
 ### Backend Tests
 Execute via:
 ```powershell
 # From backend/ResolveAI.Api.Tests
-dotnet run --no-build
+dotnet run --no-restore
 # or
 dotnet build -t:Test --no-restore
 ```
-Covers:
+Covers 7 automated suites (all mocked, zero external dependencies required):
 - **IncidentWorkflowTests**: Complete state machine transitions across Employee, Technician, Manager, Admin.
 - **SlaServiceTests**: Target calculation for Low, Medium, High, Critical; 75% AtRisk threshold; Breached/Met status; recalculation from original CreatedAt.
 - **NotificationServiceTests**: Assignment recipient routing; reporter notifications; SLA deduplication keys; actor exclusion.
 - **AuditTrailTests**: Incident creation; status change Old/New values; privacy protection for comment bodies; System actor types; AI approval attribution.
 - **UserAdminAndAuthTests**: Sole active Admin protection (demotion and deactivation prevention); second Admin flexibility; inactive account rejection; role claims synchronization.
 - **AiIncidentServiceTests**: RBAC on trigger and application; enforcement of stored recommendations over arbitrary client inputs; error mapping.
+- **ExternalEmailDeliveryTests**: 19 scenarios covering qualifying vs non-qualifying delivery, worker processing, retry schedules, max attempts, idempotency keys, duplicate prevention, and failure isolation.
 
 ### Frontend Tests
 Execute via:
@@ -171,10 +222,10 @@ Covers:
 
 ---
 
-## 8. Known Architecture Decisions & Deliberate Limitations
+## 9. Known Architecture Decisions & Deliberate Limitations
 
 1. **Authentication**: Local authentication with ASP.NET PasswordHasher remains the primary identity system. Microsoft Entra SSO is a candidate for future optional authentication provider.
 2. **Tokens & Sessions**: Tokens have a 2-hour lifetime. Refresh-token rotation and sliding session cookies are deferred to future enterprise hardening.
-3. **Notifications**: Notification delivery uses client-side polling. External notification channels (Email, Microsoft Teams, Webhooks) are deferred.
+3. **External Notifications**: Transactional email via Resend is implemented behind `IEmailSender`. Additional channels (Microsoft Teams, SMS, Webhooks) and email digest features remain deferred.
 4. **Caching & Multi-Instance**: No distributed caching (Redis) is used in this phase. Database lookups per authenticated request ensure consistency without cache invalidation complexity.
-5. **Worker Coordination**: The `SlaNotificationBackgroundService` runs as an in-process `IHostedService`. In a multi-instance deployment, leader election or a distributed scheduler (e.g., Hangfire/Quartz) would be required.
+5. **Worker Coordination**: `SlaNotificationBackgroundService` and `ExternalNotificationDeliveryWorker` run as in-process `IHostedService` instances. In a multi-instance deployment, leader election or a distributed scheduler (e.g., Hangfire/Quartz) would be evaluated.

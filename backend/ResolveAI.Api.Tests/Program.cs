@@ -13,6 +13,12 @@ public class Program
         var stopwatch = Stopwatch.StartNew();
         var failureCount = 0;
 
+        if (args.Contains("--smoke-test"))
+        {
+            ExternalEmailDeliveryTests.RunResendSmokeTest();
+            return 0;
+        }
+
         void RunSuite(string name, Action action)
         {
             try
@@ -34,6 +40,7 @@ public class Program
         RunSuite("AuditTrailTests", () => new AuditTrailTests().RunAllTests());
         RunSuite("UserAdminAndAuthTests", () => new UserAdminAndAuthTests().RunAllTests());
         RunSuite("AiIncidentServiceTests", () => new AiIncidentServiceTests().RunAllTests());
+        RunSuite("ExternalEmailDeliveryTests", () => new ExternalEmailDeliveryTests().RunAllTests());
 
         stopwatch.Stop();
 

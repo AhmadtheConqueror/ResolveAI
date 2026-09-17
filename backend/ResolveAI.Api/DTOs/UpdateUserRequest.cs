@@ -21,4 +21,6 @@ public class UpdateUserRequest
     public Guid RoleId { get; set; }
 
     public Guid? DepartmentId { get; set; }
+
+    public bool? EmailNotificationsEnabled { get; set; }
 }

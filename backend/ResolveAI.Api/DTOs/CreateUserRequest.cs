@@ -22,6 +22,8 @@ public class CreateUserRequest
 
     public Guid? DepartmentId { get; set; }
 
+    public bool? EmailNotificationsEnabled { get; set; } = true;
+
     [Required]
     [MinLength(8)]
     [MaxLength(128)]

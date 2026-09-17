@@ -52,13 +52,39 @@ public class IncidentWorkflowService
         Incident incident,
         IncidentStatus requestedStatus,
         Guid userId,
-        string? role)
+        string? role,
+        string? reason = null)
     {
         if (incident.Status == requestedStatus)
         {
             return IncidentWorkflowDecision.Reject(
                 $"Incident is already {requestedStatus}."
             );
+        }
+
+        // Administrative closure: Manager or Admin closing an incident outside Resolved -> Closed
+        if (requestedStatus == IncidentStatus.Closed && incident.Status != IncidentStatus.Resolved)
+        {
+            if (incident.Status == IncidentStatus.Closed)
+            {
+                return IncidentWorkflowDecision.Reject("Cannot change incident status from Closed to Closed.");
+            }
+
+            if (role is not ("Manager" or "Admin"))
+            {
+                return IncidentWorkflowDecision.Forbid(
+                    "Only managers and admins can administratively close an incident."
+                );
+            }
+
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return IncidentWorkflowDecision.Reject(
+                    "A non-empty reason is required for administrative closure."
+                );
+            }
+
+            return IncidentWorkflowDecision.Allow();
         }
 
         if (!IsAllowedTransition(incident.Status, requestedStatus))
@@ -84,23 +110,56 @@ public class IncidentWorkflowService
             );
         }
 
-        return role switch
+        // Technical transitions: strictly restricted to currently assigned technician
+        if (IsTechnicalTransition(incident.Status, requestedStatus))
         {
-            "Employee" => ValidateEmployeeStatusChange(
-                incident,
-                requestedStatus,
-                userId
-            ),
-            "Technician" => ValidateTechnicianStatusChange(
-                incident,
-                requestedStatus,
-                userId
-            ),
-            "Manager" or "Admin" => IncidentWorkflowDecision.Allow(),
-            _ => IncidentWorkflowDecision.Forbid(
-                "You do not have permission to update this incident."
-            )
-        };
+            if (role != "Technician")
+            {
+                return IncidentWorkflowDecision.Forbid(
+                    "Only the assigned technician can perform technical lifecycle actions."
+                );
+            }
+
+            if (incident.AssignedToId != userId)
+            {
+                return IncidentWorkflowDecision.Forbid(
+                    "Technicians can only update incidents assigned to them."
+                );
+            }
+
+            return IncidentWorkflowDecision.Allow();
+        }
+
+        // Triage: Open -> Triaged
+        if (incident.Status == IncidentStatus.Open && requestedStatus == IncidentStatus.Triaged)
+        {
+            if (role is ("Manager" or "Admin"))
+            {
+                return IncidentWorkflowDecision.Allow();
+            }
+
+            return IncidentWorkflowDecision.Forbid(
+                "Only managers and admins can triage incidents."
+            );
+        }
+
+        // Normal closure: Resolved -> Closed
+        if (incident.Status == IncidentStatus.Resolved && requestedStatus == IncidentStatus.Closed)
+        {
+            return role switch
+            {
+                "Employee" => incident.ReporterId == userId
+                    ? IncidentWorkflowDecision.Allow()
+                    : IncidentWorkflowDecision.Forbid("Employees can only close their own resolved incidents."),
+                "Manager" or "Admin" => IncidentWorkflowDecision.Allow(),
+                "Technician" => IncidentWorkflowDecision.Forbid("Technicians cannot close resolved incidents."),
+                _ => IncidentWorkflowDecision.Forbid("You do not have permission to update this incident.")
+            };
+        }
+
+        return IncidentWorkflowDecision.Forbid(
+            "You do not have permission to update this incident."
+        );
     }
 
     public bool CanComment(
@@ -123,10 +182,14 @@ public class IncidentWorkflowService
         DateTime timestamp,
         string? resolution = null)
     {
+        var isAdministrativeClosure = requestedStatus == IncidentStatus.Closed &&
+            incident.Status != IncidentStatus.Resolved;
+
         incident.Status = requestedStatus;
         incident.UpdatedAt = timestamp;
 
-        if (requestedStatus != IncidentStatus.Open &&
+        if (!isAdministrativeClosure &&
+            requestedStatus != IncidentStatus.Open &&
             incident.FirstRespondedAt is null)
         {
             incident.FirstRespondedAt = timestamp;
@@ -163,6 +226,20 @@ public class IncidentWorkflowService
             nextStatuses.Contains(requestedStatus);
     }
 
+    private static bool IsTechnicalTransition(
+        IncidentStatus currentStatus,
+        IncidentStatus requestedStatus)
+    {
+        return (currentStatus, requestedStatus) switch
+        {
+            (IncidentStatus.Assigned, IncidentStatus.InProgress) => true,
+            (IncidentStatus.InProgress, IncidentStatus.WaitingForUser) => true,
+            (IncidentStatus.WaitingForUser, IncidentStatus.InProgress) => true,
+            (IncidentStatus.InProgress, IncidentStatus.Resolved) => true,
+            _ => false
+        };
+    }
+
     private static bool RequiresAssignedTechnician(
         IncidentStatus requestedStatus)
     {
@@ -170,45 +247,5 @@ public class IncidentWorkflowService
             IncidentStatus.InProgress or
             IncidentStatus.WaitingForUser or
             IncidentStatus.Resolved;
-    }
-
-    private static IncidentWorkflowDecision ValidateEmployeeStatusChange(
-        Incident incident,
-        IncidentStatus requestedStatus,
-        Guid userId)
-    {
-        if (incident.ReporterId == userId &&
-            incident.Status == IncidentStatus.Resolved &&
-            requestedStatus == IncidentStatus.Closed)
-        {
-            return IncidentWorkflowDecision.Allow();
-        }
-
-        return IncidentWorkflowDecision.Forbid(
-            "Employees can only close their own resolved incidents."
-        );
-    }
-
-    private static IncidentWorkflowDecision ValidateTechnicianStatusChange(
-        Incident incident,
-        IncidentStatus requestedStatus,
-        Guid userId)
-    {
-        if (incident.AssignedToId != userId)
-        {
-            return IncidentWorkflowDecision.Forbid(
-                "Technicians can only update incidents assigned to them."
-            );
-        }
-
-        return requestedStatus switch
-        {
-            IncidentStatus.InProgress or
-            IncidentStatus.WaitingForUser or
-            IncidentStatus.Resolved => IncidentWorkflowDecision.Allow(),
-            _ => IncidentWorkflowDecision.Forbid(
-                "Technicians cannot perform this status change."
-            )
-        };
     }
 }

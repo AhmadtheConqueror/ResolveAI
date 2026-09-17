@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ResolveAI.Api.Data;
 using ResolveAI.Api.Entities;
 using ResolveAI.Api.Enums;
@@ -10,13 +13,20 @@ public class NotificationService : INotificationService
 {
     private readonly AppDbContext _context;
     private readonly ISlaService _slaService;
+    private readonly IServiceScopeFactory? _scopeFactory;
+    private readonly ILogger<NotificationService>? _logger;
+    private readonly List<ExternalDeliveryDraft> _pendingDeliveries = new();
 
     public NotificationService(
         AppDbContext context,
-        ISlaService slaService)
+        ISlaService slaService,
+        IServiceScopeFactory? scopeFactory = null,
+        ILogger<NotificationService>? logger = null)
     {
         _context = context;
         _slaService = slaService;
+        _scopeFactory = scopeFactory;
+        _logger = logger;
     }
 
     public async Task QueueIncidentCreatedAsync(
@@ -40,8 +50,25 @@ public class NotificationService : INotificationService
                 incident.IncidentNumber,
                 actorUserId,
                 null,
-                cancellationToken);
+                cancellationToken,
+                isEmailEligible: true);
         }
+    }
+
+    public Task QueueIncidentAssignedAsync(
+        Incident incident,
+        AppUser technician,
+        Guid actorUserId,
+        bool wasReassignment,
+        CancellationToken cancellationToken = default)
+    {
+        return QueueIncidentAssignedAsync(
+            incident,
+            technician,
+            actorUserId,
+            wasReassignment,
+            previousAssigneeName: null,
+            cancellationToken);
     }
 
     public async Task QueueIncidentAssignedAsync(
@@ -49,6 +76,7 @@ public class NotificationService : INotificationService
         AppUser technician,
         Guid actorUserId,
         bool wasReassignment,
+        string? previousAssigneeName,
         CancellationToken cancellationToken = default)
     {
         var type = wasReassignment
@@ -59,29 +87,49 @@ public class NotificationService : INotificationService
             ? "Incident reassigned to you"
             : "Incident assigned to you";
 
+        var newAssigneeName = GetDisplayName(technician);
+
+        var techMessage = wasReassignment
+            ? (!string.IsNullOrWhiteSpace(previousAssigneeName)
+                ? $"Incident {incident.IncidentNumber} has been reassigned to you. Previous assignee: {previousAssigneeName}."
+                : $"Incident {incident.IncidentNumber} has been reassigned to you.")
+            : $"Incident {incident.IncidentNumber} has been assigned to you.";
+
         await QueueNotificationAsync(
             technician.Id,
             type,
             technicianTitle,
-            $"{incident.IncidentNumber} · assigned to you.",
+            techMessage,
             incident.Id,
             incident.Title,
             incident.IncidentNumber,
             actorUserId,
             null,
-            cancellationToken);
+            cancellationToken,
+            isEmailEligible: true);
+
+        var reporterTitle = wasReassignment
+            ? "Your incident has been reassigned"
+            : "Your incident has been assigned";
+
+        var reporterMessage = wasReassignment
+            ? (!string.IsNullOrWhiteSpace(previousAssigneeName)
+                ? $"Incident {incident.IncidentNumber} has been reassigned to {newAssigneeName}. Previous assignee: {previousAssigneeName}."
+                : $"Incident {incident.IncidentNumber} has been reassigned to {newAssigneeName}.")
+            : $"Incident {incident.IncidentNumber} has been assigned to {newAssigneeName}.";
 
         await QueueNotificationAsync(
             incident.ReporterId,
             type,
-            "Your incident has been assigned",
-            $"{incident.IncidentNumber} · assigned to {GetDisplayName(technician)}.",
+            reporterTitle,
+            reporterMessage,
             incident.Id,
             incident.Title,
             incident.IncidentNumber,
             actorUserId,
             null,
-            cancellationToken);
+            cancellationToken,
+            isEmailEligible: true);
     }
 
     public async Task QueueIncidentCommentAddedAsync(
@@ -108,7 +156,8 @@ public class NotificationService : INotificationService
                     incident.IncidentNumber,
                     author.Id,
                     null,
-                    cancellationToken);
+                    cancellationToken,
+                    isEmailEligible: true);
             }
             else if (IncidentRequiresManagementAttention(incident))
             {
@@ -129,7 +178,8 @@ public class NotificationService : INotificationService
                         incident.IncidentNumber,
                         author.Id,
                         null,
-                        cancellationToken);
+                        cancellationToken,
+                        isEmailEligible: true);
                 }
             }
 
@@ -148,7 +198,8 @@ public class NotificationService : INotificationService
                 incident.IncidentNumber,
                 author.Id,
                 null,
-                cancellationToken);
+                cancellationToken,
+                isEmailEligible: true);
 
             return;
         }
@@ -165,7 +216,8 @@ public class NotificationService : INotificationService
                 incident.IncidentNumber,
                 author.Id,
                 null,
-                cancellationToken);
+                cancellationToken,
+                isEmailEligible: true);
 
             if (incident.AssignedToId.HasValue)
             {
@@ -179,7 +231,8 @@ public class NotificationService : INotificationService
                     incident.IncidentNumber,
                     author.Id,
                     null,
-                    cancellationToken);
+                    cancellationToken,
+                    isEmailEligible: false);
             }
         }
     }
@@ -207,38 +260,49 @@ public class NotificationService : INotificationService
                 incident.IncidentNumber,
                 actorUserId,
                 null,
-                cancellationToken);
+                cancellationToken,
+                isEmailEligible: true);
 
             return;
         }
 
         if (newStatus == IncidentStatus.Closed)
         {
+            var isAdministrativeClosure = oldStatus != IncidentStatus.Resolved;
+            var closureTitle = isAdministrativeClosure
+                ? "Incident administratively closed"
+                : "Incident closed";
+            var closureMessage = isAdministrativeClosure
+                ? $"{incident.IncidentNumber} · administratively closed by {actorName}."
+                : $"{incident.IncidentNumber} · closed by {actorName}.";
+
             await QueueNotificationAsync(
                 incident.ReporterId,
                 NotificationType.IncidentClosed,
-                "Incident closed",
-                $"{incident.IncidentNumber} · closed by {actorName}.",
+                closureTitle,
+                closureMessage,
                 incident.Id,
                 incident.Title,
                 incident.IncidentNumber,
                 actorUserId,
                 null,
-                cancellationToken);
+                cancellationToken,
+                isEmailEligible: true);
 
             if (incident.AssignedToId.HasValue)
             {
                 await QueueNotificationAsync(
                     incident.AssignedToId.Value,
                     NotificationType.IncidentClosed,
-                    "Incident closed",
-                    $"{incident.IncidentNumber} · closed by {actorName}.",
+                    closureTitle,
+                    closureMessage,
                     incident.Id,
                     incident.Title,
                     incident.IncidentNumber,
                     actorUserId,
                     null,
-                    cancellationToken);
+                    cancellationToken,
+                    isEmailEligible: false);
             }
 
             return;
@@ -254,7 +318,8 @@ public class NotificationService : INotificationService
             incident.IncidentNumber,
             actorUserId,
             null,
-            cancellationToken);
+            cancellationToken,
+            isEmailEligible: false);
 
         if (incident.AssignedToId.HasValue)
         {
@@ -268,7 +333,8 @@ public class NotificationService : INotificationService
                 incident.IncidentNumber,
                 actorUserId,
                 null,
-                cancellationToken);
+                cancellationToken,
+                isEmailEligible: false);
         }
     }
 
@@ -305,7 +371,8 @@ public class NotificationService : INotificationService
                 incident.IncidentNumber,
                 actorUserId,
                 null,
-                cancellationToken);
+                cancellationToken,
+                isEmailEligible: false);
         }
     }
 
@@ -412,7 +479,8 @@ public class NotificationService : INotificationService
                 incident.IncidentNumber,
                 null,
                 deduplicationKey,
-                cancellationToken);
+                cancellationToken,
+                isEmailEligible: true);
         }
     }
 
@@ -524,14 +592,16 @@ public class NotificationService : INotificationService
         string? incidentNumber,
         Guid? actorUserId,
         string? deduplicationKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool isEmailEligible = false)
     {
         if (actorUserId.HasValue && userId == actorUserId.Value)
         {
             return;
         }
 
-        if (!await IsActiveUserAsync(userId, cancellationToken))
+        var recipient = await GetActiveRecipientAsync(userId, cancellationToken);
+        if (recipient is null)
         {
             return;
         }
@@ -542,8 +612,9 @@ public class NotificationService : INotificationService
             return;
         }
 
-        _context.Notifications.Add(new Notification
+        var notification = new Notification
         {
+            Id = Guid.NewGuid(),
             UserId = userId,
             Type = type,
             Title = title,
@@ -554,16 +625,192 @@ public class NotificationService : INotificationService
             ActorUserId = actorUserId,
             DeduplicationKey = deduplicationKey,
             CreatedAt = DateTime.UtcNow
-        });
+        };
+
+        _context.Notifications.Add(notification);
+
+        if (isEmailEligible)
+        {
+            QueueEmailDeliverySafe(notification, recipient);
+        }
     }
 
-    private Task<bool> IsActiveUserAsync(
+    private void QueueEmailDeliverySafe(
+        Notification notification,
+        RecipientUserInfo recipient)
+    {
+        try
+        {
+            if (!recipient.EmailNotificationsEnabled)
+            {
+                return;
+            }
+
+            if (!IsValidEmail(recipient.Email))
+            {
+                _logger?.LogInformation(
+                    "Skipping email delivery for user {UserId}: email address '{Email}' is missing or invalid.",
+                    recipient.Id,
+                    recipient.Email);
+                return;
+            }
+
+            var idempotencyKey = $"email/{notification.Id}/{recipient.Id}";
+
+            _pendingDeliveries.Add(new ExternalDeliveryDraft(
+                notification.Id,
+                recipient.Email,
+                idempotencyKey));
+
+            _logger?.LogInformation(
+                "External email delivery drafted: {RecipientAddress} (Notification: {NotificationId}, Key: {IdempotencyKey})",
+                recipient.Email,
+                notification.Id,
+                idempotencyKey);
+        }
+        catch (Exception ex)
+        {
+            // Email delivery drafting failure must NEVER fail notification or incident workflows
+            _logger?.LogError(
+                ex,
+                "Failed to draft external email delivery for notification {NotificationId}. In-app notification preserved.",
+                notification.Id);
+        }
+    }
+
+    public async Task StagePendingExternalDeliveriesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_pendingDeliveries.Count == 0)
+        {
+            return;
+        }
+
+        var deliveriesToStage = _pendingDeliveries.ToList();
+        _pendingDeliveries.Clear();
+
+        IServiceScope? scope = null;
+        try
+        {
+            AppDbContext stagingContext;
+            (scope, stagingContext) = CreateStagingContext();
+
+            await using (stagingContext)
+            {
+                foreach (var draft in deliveriesToStage)
+                {
+                    var delivery = new ExternalNotificationDelivery
+                    {
+                        Id = Guid.NewGuid(),
+                        NotificationId = draft.NotificationId,
+                        Channel = ExternalDeliveryChannel.Email,
+                        RecipientAddress = draft.RecipientAddress,
+                        Provider = "Resend",
+                        Status = ExternalDeliveryStatus.Pending,
+                        AttemptCount = 0,
+                        NextAttemptAt = DateTime.UtcNow,
+                        IdempotencyKey = draft.IdempotencyKey,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+
+                    stagingContext.ExternalNotificationDeliveries.Add(delivery);
+                }
+
+                await stagingContext.SaveChangesAsync(cancellationToken);
+
+                _logger?.LogInformation(
+                    "Staged {Count} external email deliveries in separate DbContext scope.",
+                    deliveriesToStage.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(
+                ex,
+                "Failed to stage external email deliveries in separate scope. Core business transaction and in-app notifications are preserved.");
+        }
+        finally
+        {
+            scope?.Dispose();
+        }
+    }
+
+    private (IServiceScope? scope, AppDbContext context) CreateStagingContext()
+    {
+        if (_scopeFactory != null)
+        {
+            var scope = _scopeFactory.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            return (scope, context);
+        }
+
+        var connection = _context.Database.GetDbConnection();
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(connection)
+            .Options;
+
+        var stagingContext = new AppDbContext(options);
+        var currentTx = _context.Database.CurrentTransaction;
+        if (currentTx != null)
+        {
+            stagingContext.Database.UseTransaction(currentTx.GetDbTransaction());
+        }
+
+        return (null, stagingContext);
+    }
+
+    private static bool IsValidEmail(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return false;
+        }
+
+        var trimmed = email.Trim();
+        if (!System.Net.Mail.MailAddress.TryCreate(trimmed, out var mailAddress))
+        {
+            return false;
+        }
+
+        return string.Equals(mailAddress.Address, trimmed, StringComparison.OrdinalIgnoreCase) &&
+               mailAddress.Host.Contains('.');
+    }
+
+    private record ExternalDeliveryDraft(
+        Guid NotificationId,
+        string RecipientAddress,
+        string IdempotencyKey);
+
+    private record RecipientUserInfo(
+        Guid Id,
+        string Email,
+        bool IsActive,
+        bool EmailNotificationsEnabled);
+
+    private async Task<RecipientUserInfo?> GetActiveRecipientAsync(
         Guid userId,
         CancellationToken cancellationToken)
     {
-        return _context.Users
+        var local = _context.ChangeTracker
+            .Entries<AppUser>()
+            .FirstOrDefault(e => e.Entity.Id == userId)?.Entity;
+
+        if (local is not null)
+        {
+            return local.IsActive
+                ? new RecipientUserInfo(local.Id, local.Email, local.IsActive, local.EmailNotificationsEnabled)
+                : null;
+        }
+
+        return await _context.Users
             .AsNoTracking()
-            .AnyAsync(u => u.Id == userId && u.IsActive, cancellationToken);
+            .Where(u => u.Id == userId && u.IsActive)
+            .Select(u => new RecipientUserInfo(
+                u.Id,
+                u.Email,
+                u.IsActive,
+                u.EmailNotificationsEnabled))
+            .SingleOrDefaultAsync(cancellationToken);
     }
 
     private async Task<bool> NotificationExistsAsync(

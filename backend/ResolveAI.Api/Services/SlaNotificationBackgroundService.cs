@@ -58,6 +58,8 @@ public class SlaNotificationBackgroundService : BackgroundService
                 cancellationToken);
 
             await context.SaveChangesAsync(cancellationToken);
+
+            await notifications.StagePendingExternalDeliveriesAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {

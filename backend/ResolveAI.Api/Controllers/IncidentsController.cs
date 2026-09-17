@@ -780,6 +780,7 @@ public class IncidentsController : ControllerBase
                 technician,
                 userId,
                 wasReassignment,
+                oldAssigneeName,
                 HttpContext.RequestAborted);
 
             await _auditService.RecordAssignmentChangedAsync(
@@ -803,6 +804,8 @@ public class IncidentsController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.StagePendingExternalDeliveriesAsync(HttpContext.RequestAborted);
 
         return Ok(new
         {
@@ -869,7 +872,8 @@ public class IncidentsController : ControllerBase
             incident,
             requestedStatus,
             userId,
-            role
+            role,
+            request.Reason
         );
 
         if (!statusDecision.IsAllowed)
@@ -911,6 +915,7 @@ public class IncidentsController : ControllerBase
             oldStatus,
             requestedStatus,
             userId,
+            request.Reason,
             HttpContext.RequestAborted);
 
         if (!hadFirstResponse && incident.FirstRespondedAt.HasValue)
@@ -935,6 +940,8 @@ public class IncidentsController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.StagePendingExternalDeliveriesAsync(HttpContext.RequestAborted);
 
         return Ok(new
         {
@@ -1077,6 +1084,8 @@ public class IncidentsController : ControllerBase
             HttpContext.RequestAborted);
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.StagePendingExternalDeliveriesAsync(HttpContext.RequestAborted);
 
         return Created(
             $"/api/incidents/{incident.Id}/comments/{comment.Id}",
@@ -1369,6 +1378,8 @@ public class IncidentsController : ControllerBase
 
         await _context.SaveChangesAsync();
 
+        await _notificationService.StagePendingExternalDeliveriesAsync(HttpContext.RequestAborted);
+
         return Ok(new
         {
             incidentId = incident.Id,
@@ -1467,6 +1478,8 @@ public class IncidentsController : ControllerBase
             HttpContext.RequestAborted);
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.StagePendingExternalDeliveriesAsync(HttpContext.RequestAborted);
 
         return Created(
             $"/api/incidents/{incident.Id}",
