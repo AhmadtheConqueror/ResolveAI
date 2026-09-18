@@ -28,16 +28,18 @@ Configuration keys can be provided via environment variables in production (usin
 | `Jwt:Key` | Symmetric HMAC-SHA256 signing key (min 32 chars / 256 bits) | Yes | Secure random string (never committed) |
 | `Jwt:Issuer` | JWT token issuer | Yes | `ResolveAI.Api` |
 | `Jwt:Audience` | JWT token audience | Yes | `ResolveAI.Web` |
-| `Gemini:ApiKey` | Google Gemini API Key for AI Incident Analysis | Optional | API key string (AI features disabled/mocked if omitted) |
+| `AI:Provider` | AI provider for incident analysis and resolution assistance | Yes (if AI enabled) | `Gemini` |
+| `AI:Model` | AI model for incident analysis and resolution assistance | Yes (if AI enabled) | `gemini-2.5-flash` |
+| `AI:ApiKey` | Google AI API key for Gemini-backed AI features | Yes (if AI enabled) | API key string (never committed) |
 | `Features:AllowPublicRegistration` | Disables/enables self-registration | No (default `false`) | `false` |
 | `Frontend:AllowedOrigins` | Allowed CORS origins for frontend client | Yes | `http://localhost:5173` or `https://resolveai.yourdomain.com` |
 | `Frontend:BaseUrl` | Frontend client base URL for email action links | Yes | `http://localhost:5173` |
 | `ExternalNotifications:EmailEnabled` | Master toggle for external email dispatching | No (default `false`) | `false` (in dev), `true` (in prod) |
 | `ExternalNotifications:OverrideRecipient` | Safe development recipient override | No | `delivered@resend.dev` (never in prod) |
 | `Resend:ApiKey` | Resend REST API authorization key | Yes (if email enabled) | `re_...` (never committed) |
-| `Resend:FromAddress` | Verified sending email address | Yes (if email enabled) | `notifications@resolveai.dev` |
+| `Resend:FromEmail` | Verified sending email address | Yes (if email enabled) | `notifications@resolveai.dev` |
 | `Resend:FromName` | Sender display name | No | `ResolveAI Notifications` |
-| `Resend:Enabled` | Provider-level toggle | No (default `false`) | `true` |
+| `Resend:ApiUrl` | Resend REST API endpoint | No | `https://api.resend.com/emails` |
 
 > [!IMPORTANT]
 > **Production Startup Validation**:

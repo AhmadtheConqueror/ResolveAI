@@ -1,9 +1,11 @@
 using System.Security.Claims;
+using System.Net;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -22,9 +24,27 @@ builder.Services.AddOpenApi();
 
 // PostgreSQL + Entity Framework Core
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection")
-    ));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+
+    var knownProxies = builder.Configuration["ForwardedHeaders:KnownProxies"];
+    if (!string.IsNullOrWhiteSpace(knownProxies))
+    {
+        foreach (var address in knownProxies.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!IPAddress.TryParse(address, out var ipAddress))
+            {
+                throw new InvalidOperationException("ForwardedHeaders:KnownProxies must contain IP addresses.");
+            }
+
+            options.KnownProxies.Add(ipAddress);
+        }
+    }
+});
 
 builder.Services.AddScoped<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>();
 builder.Services.AddScoped<ITokenService, TokenService>();
@@ -191,7 +211,9 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Global Exception Handler (first in pipeline)
+app.UseForwardedHeaders();
+
+// Global Exception Handler
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
 // Security headers
