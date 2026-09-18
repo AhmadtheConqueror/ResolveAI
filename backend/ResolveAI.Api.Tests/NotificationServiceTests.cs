@@ -1,5 +1,6 @@
 using ResolveAI.Api.Entities;
 using ResolveAI.Api.Enums;
+using ResolveAI.Api.Services;
 
 namespace ResolveAI.Api.Tests;
 
@@ -13,6 +14,7 @@ public class NotificationServiceTests
         Test_Actor_Exclusion_Rule();
         Test_Sla_Deduplication_Key_Format();
         Test_Resolved_And_Closed_Incidents_Skip_Sla_Notifications();
+        Test_Status_Transition_Notification_Titles();
     }
 
     private void Test_Notification_Incident_Snapshot_Fields()
@@ -95,5 +97,20 @@ public class NotificationServiceTests
         Assert.True(ShouldCheckSla(inProgressIncident), "InProgress incident must be evaluated for SLA alerts");
 
         Console.WriteLine("  ✓ Resolved and Closed incidents bypass SLA notification generation");
+    }
+
+    private void Test_Status_Transition_Notification_Titles()
+    {
+        Assert.Equal("Incident moved to In Progress", NotificationService.GetStatusChangeTitle(IncidentStatus.Assigned, IncidentStatus.InProgress));
+        Assert.Equal("Incident waiting for user", NotificationService.GetStatusChangeTitle(IncidentStatus.InProgress, IncidentStatus.WaitingForUser));
+        Assert.Equal("Incident work resumed", NotificationService.GetStatusChangeTitle(IncidentStatus.WaitingForUser, IncidentStatus.InProgress));
+        Assert.Equal("Incident resolved", NotificationService.GetStatusChangeTitle(IncidentStatus.InProgress, IncidentStatus.Resolved));
+        Assert.Equal("Incident closed", NotificationService.GetStatusChangeTitle(IncidentStatus.Resolved, IncidentStatus.Closed));
+        Assert.Equal("Incident administratively closed", NotificationService.GetStatusChangeTitle(IncidentStatus.InProgress, IncidentStatus.Closed));
+        Assert.Equal("Incident administratively closed", NotificationService.GetStatusChangeTitle(IncidentStatus.Triaged, IncidentStatus.Closed));
+        Assert.Equal("Incident triaged", NotificationService.GetStatusChangeTitle(IncidentStatus.Open, IncidentStatus.Triaged));
+        Assert.Equal("Incident status updated", NotificationService.GetStatusChangeTitle(IncidentStatus.Open, IncidentStatus.Open));
+
+        Console.WriteLine("  ✓ Specific status transition notification titles verified");
     }
 }

@@ -9,8 +9,14 @@ import {
 import type {
   AnalyticsOverview,
   AnalyticsRange,
+  AnalyticsTrendPoint,
   CurrentUser,
 } from "../api/api";
+import {
+  formatAriaDate,
+  formatDateLabel,
+  formatTooltipDate,
+} from "../utils/analyticsTrend";
 import Sidebar from "../components/Sidebar";
 import {
   Skeleton,
@@ -53,28 +59,7 @@ function formatDuration(minutes: number | null) {
   return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
 }
 
-function formatDateLabel(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-  }).format(new Date(value));
-}
 
-function formatTooltipDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
-function formatAriaDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(value));
-}
 
 function formatIncidentNoun(count: number) {
   return count === 1 ? "incident" : "incidents";
@@ -115,8 +100,7 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [trendTooltip, setTrendTooltip] = useState<{
-    date: string;
-    count: number;
+    point: AnalyticsTrendPoint;
     left: number;
     top: number;
     width: number;
@@ -187,7 +171,7 @@ export default function AnalyticsPage() {
 
   const showTrendTooltip = useCallback(
     (
-      point: AnalyticsOverview["incidentTrend"][number],
+      point: AnalyticsTrendPoint,
       target: HTMLElement
     ) => {
       const chart = trendChartRef.current;
@@ -195,7 +179,7 @@ export default function AnalyticsPage() {
 
       const chartRect = chart.getBoundingClientRect();
       const targetRect = target.getBoundingClientRect();
-      const tooltipWidth = Math.min(180, Math.max(136, chartRect.width - 16));
+      const tooltipWidth = Math.min(220, Math.max(140, chartRect.width - 16));
       const halfTooltipWidth = tooltipWidth / 2;
       const center = targetRect.left - chartRect.left + targetRect.width / 2;
       const minLeft = halfTooltipWidth + 8;
@@ -207,8 +191,7 @@ export default function AnalyticsPage() {
       const top = Math.max(8, targetRect.top - chartRect.top - 64);
 
       setTrendTooltip({
-        date: point.date,
-        count: point.count,
+        point,
         left,
         top,
         width: tooltipWidth,
@@ -507,8 +490,8 @@ export default function AnalyticsPage() {
                       onMouseLeave={hideTrendTooltip}
                     >
                       {data.incidentTrend.map((point) => {
-                        const isActive = trendTooltip?.date === point.date;
-                        const ariaLabel = `${formatAriaDate(point.date)}: ${
+                        const isActive = trendTooltip?.point.date === point.date;
+                        const ariaLabel = `${formatAriaDate(point)}: ${
                           point.count
                         } ${formatIncidentNoun(point.count)}`;
 
@@ -538,7 +521,7 @@ export default function AnalyticsPage() {
                               showTrendTooltip(point, event.currentTarget)
                             }
                           />
-                          <small>{formatDateLabel(point.date)}</small>
+                          <small>{formatDateLabel(point)}</small>
                         </div>
                         );
                       })}
@@ -555,12 +538,18 @@ export default function AnalyticsPage() {
                           }}
                         >
                           <div>
-                            <span>Date</span>
-                            <strong>{formatTooltipDate(trendTooltip.date)}</strong>
+                            <span>
+                              {trendTooltip.point.granularity === "monthly"
+                                ? "Month"
+                                : trendTooltip.point.granularity === "weekly"
+                                ? "Week"
+                                : "Date"}
+                            </span>
+                            <strong>{formatTooltipDate(trendTooltip.point)}</strong>
                           </div>
                           <div>
                             <span>Incidents</span>
-                            <strong>{trendTooltip.count}</strong>
+                            <strong>{trendTooltip.point.count}</strong>
                           </div>
                         </div>
                       )}

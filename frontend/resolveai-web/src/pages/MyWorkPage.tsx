@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   assignIncident,
-  getIncidents,
+  getIncidentsPaged,
   getQueueSummary,
   getTechnicians,
   getTechnicianWorkload,
@@ -121,8 +121,117 @@ function getBadgeClass(prefix: string, value: string) {
 type ManagerTab = "triage" | "unassigned" | "sla" | "active" | "resolved";
 type TechnicianTab = "all" | "assigned" | "inprogress" | "waiting" | "sla";
 
+const VALID_TECH_TABS: TechnicianTab[] = [
+  "all",
+  "assigned",
+  "inprogress",
+  "waiting",
+  "sla",
+];
+
+const VALID_MANAGER_TABS: ManagerTab[] = [
+  "triage",
+  "unassigned",
+  "sla",
+  "active",
+  "resolved",
+];
+
+function parseSortCombo(combo: string): {
+  sortBy: string;
+  sortDirection: "asc" | "desc";
+} {
+  switch (combo) {
+    case "createdat_desc":
+      return { sortBy: "createdat", sortDirection: "desc" };
+    case "createdat_asc":
+      return { sortBy: "createdat", sortDirection: "asc" };
+    case "priority_desc":
+      return { sortBy: "priority", sortDirection: "desc" };
+    case "priority_asc":
+      return { sortBy: "priority", sortDirection: "asc" };
+    case "updatedat_desc":
+      return { sortBy: "updatedat", sortDirection: "desc" };
+    case "urgency":
+    default:
+      return { sortBy: "urgency", sortDirection: "desc" };
+  }
+}
+
+function getSortCombo(
+  sortBy?: string | null,
+  sortDirection?: string | null
+): string {
+  if (sortBy === "createdat" && sortDirection === "asc") return "createdat_asc";
+  if (sortBy === "createdat") return "createdat_desc";
+  if (sortBy === "priority" && sortDirection === "asc") return "priority_asc";
+  if (sortBy === "priority") return "priority_desc";
+  if (sortBy === "updatedat") return "updatedat_desc";
+  return "urgency";
+}
+
+function getSortMetaLabel(combo: string): string {
+  switch (combo) {
+    case "createdat_desc":
+      return "Sorted by Newest First";
+    case "createdat_asc":
+      return "Sorted by Oldest First";
+    case "priority_desc":
+      return "Sorted by Priority (Highest First)";
+    case "priority_asc":
+      return "Sorted by Priority (Lowest First)";
+    case "updatedat_desc":
+      return "Sorted by Recently Updated";
+    case "urgency":
+    default:
+      return "Sorted by SLA Urgency";
+  }
+}
+
+function getStatusOptionsForTab(
+  isTechnician: boolean,
+  activeTab: string
+): Array<{ value: string; label: string }> | null {
+  if (isTechnician) {
+    if (activeTab === "all" || activeTab === "sla") {
+      return [
+        { value: "all", label: "All Active Statuses" },
+        { value: "Assigned", label: "Assigned" },
+        { value: "InProgress", label: "In Progress" },
+        { value: "WaitingForUser", label: "Waiting for User" },
+      ];
+    }
+    // Single-status technician tabs ("assigned", "inprogress", "waiting")
+    return null;
+  }
+
+  // Manager / Admin operational tabs
+  if (activeTab === "active" || activeTab === "sla") {
+    return [
+      { value: "all", label: "All Active Statuses" },
+      { value: "Open", label: "Open" },
+      { value: "Triaged", label: "Triaged" },
+      { value: "Assigned", label: "Assigned" },
+      { value: "InProgress", label: "In Progress" },
+      { value: "WaitingForUser", label: "Waiting for User" },
+    ];
+  }
+
+  if (activeTab === "unassigned") {
+    return [
+      { value: "all", label: "All Unassigned (Triaged & Assigned)" },
+      { value: "Triaged", label: "Triaged" },
+      { value: "Assigned", label: "Assigned" },
+    ];
+  }
+
+  // "triage" (Open) and "resolved" (Resolved) are single-status tabs
+  return null;
+}
+
 export default function MyWorkPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [user] = useState<CurrentUser | null>(() => readCurrentUser());
 
   const role = user?.role ?? "";
@@ -138,9 +247,50 @@ export default function MyWorkPage() {
     }
   }, [isEmployee, navigate]);
 
+  // URL state initialization
+  const urlTab = searchParams.get("tab");
+  const initialTechTab: TechnicianTab =
+    isTechnician && urlTab && (VALID_TECH_TABS as string[]).includes(urlTab)
+      ? (urlTab as TechnicianTab)
+      : "all";
+
+  const initialManagerTab: ManagerTab =
+    !isTechnician && urlTab && (VALID_MANAGER_TABS as string[]).includes(urlTab)
+      ? (urlTab as ManagerTab)
+      : "triage";
+
   // Active tab states
-  const [managerTab, setManagerTab] = useState<ManagerTab>("triage");
-  const [techTab, setTechTab] = useState<TechnicianTab>("all");
+  const [managerTab, setManagerTab] = useState<ManagerTab>(initialManagerTab);
+  const [techTab, setTechTab] = useState<TechnicianTab>(initialTechTab);
+
+  // Search, sort, and filter states
+  const initialSearch = searchParams.get("search") || "";
+  const [searchInput, setSearchInput] = useState(initialSearch);
+  const [search, setSearch] = useState(initialSearch);
+
+  const initialSort = getSortCombo(
+    searchParams.get("sortBy"),
+    searchParams.get("sortDirection")
+  );
+  const [sortCombo, setSortCombo] = useState(initialSort);
+
+  const initialPriority = searchParams.get("priority") || "all";
+  const [priorityFilter, setPriorityFilter] = useState(initialPriority);
+
+  const initialStatus = searchParams.get("status") || "all";
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
+
+  const initialSla = searchParams.get("slaStatus") || "all";
+  const [slaFilter, setSlaFilter] = useState(initialSla);
+
+  // Pagination state
+  const initialPage = parseInt(searchParams.get("page") || "1", 10) || 1;
+  const initialPageSize =
+    parseInt(searchParams.get("pageSize") || "25", 10) || 25;
+  const [page, setPage] = useState(initialPage);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   // Data states
   const [queueSummary, setQueueSummary] = useState<QueueSummary | null>(null);
@@ -163,6 +313,168 @@ export default function MyWorkPage() {
     navigate("/", { replace: true });
   }, [navigate]);
 
+  // Sync state to URL search params
+  const updateUrlParams = useCallback(
+    (updates: {
+      tab?: string;
+      search?: string;
+      sortCombo?: string;
+      priority?: string;
+      status?: string;
+      slaStatus?: string;
+      page?: number;
+      pageSize?: number;
+    }) => {
+      const sp = new URLSearchParams();
+      const currentTab = updates.tab ?? (isTechnician ? techTab : managerTab);
+      const defaultTab = isTechnician ? "all" : "triage";
+      if (currentTab && currentTab !== defaultTab) {
+        sp.set("tab", currentTab);
+      }
+
+      const currentSearch =
+        updates.search !== undefined ? updates.search : search;
+      if (currentSearch.trim()) {
+        sp.set("search", currentSearch.trim());
+      }
+
+      const currentSort =
+        updates.sortCombo !== undefined ? updates.sortCombo : sortCombo;
+      if (currentSort && currentSort !== "urgency") {
+        const { sortBy, sortDirection } = parseSortCombo(currentSort);
+        sp.set("sortBy", sortBy);
+        sp.set("sortDirection", sortDirection);
+      }
+
+      const currentPriority =
+        updates.priority !== undefined ? updates.priority : priorityFilter;
+      if (currentPriority && currentPriority !== "all") {
+        sp.set("priority", currentPriority);
+      }
+
+      const currentStatus =
+        updates.status !== undefined ? updates.status : statusFilter;
+      if (currentStatus && currentStatus !== "all") {
+        sp.set("status", currentStatus);
+      }
+
+      const currentSla =
+        updates.slaStatus !== undefined ? updates.slaStatus : slaFilter;
+      if (currentSla && currentSla !== "all") {
+        sp.set("slaStatus", currentSla);
+      }
+
+      const currentPage = updates.page !== undefined ? updates.page : page;
+      if (currentPage && currentPage > 1) {
+        sp.set("page", String(currentPage));
+      }
+
+      const currentPageSize =
+        updates.pageSize !== undefined ? updates.pageSize : pageSize;
+      if (currentPageSize && currentPageSize !== 25) {
+        sp.set("pageSize", String(currentPageSize));
+      }
+
+      setSearchParams(sp, { replace: true });
+    },
+    [
+      isTechnician,
+      managerTab,
+      page,
+      pageSize,
+      priorityFilter,
+      search,
+      setSearchParams,
+      slaFilter,
+      sortCombo,
+      statusFilter,
+      techTab,
+    ]
+  );
+
+  // Status and tab helpers
+  const currentTab = isTechnician ? techTab : managerTab;
+  const statusOptions = useMemo(
+    () => getStatusOptionsForTab(isTechnician, currentTab),
+    [isTechnician, currentTab]
+  );
+  const isSlaTab = isTechnician ? techTab === "sla" : managerTab === "sla";
+
+  const hasActiveFilters =
+    search.trim() !== "" ||
+    sortCombo !== "urgency" ||
+    priorityFilter !== "all" ||
+    statusFilter !== "all" ||
+    slaFilter !== "all";
+
+  // Tab selection handlers
+  function handleSelectTechTab(tab: TechnicianTab) {
+    setTechTab(tab);
+    setStatusFilter("all");
+    setPage(1);
+    updateUrlParams({ tab, status: "all", page: 1 });
+  }
+
+  function handleSelectManagerTab(tab: ManagerTab) {
+    setManagerTab(tab);
+    setStatusFilter("all");
+    setPage(1);
+    updateUrlParams({ tab, status: "all", page: 1 });
+  }
+
+  // Filter toolbar handlers
+  function handleSearchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = searchInput.trim();
+    setSearch(trimmed);
+    setPage(1);
+    updateUrlParams({ search: trimmed, page: 1 });
+  }
+
+  function handleSortChange(value: string) {
+    setSortCombo(value);
+    setPage(1);
+    updateUrlParams({ sortCombo: value, page: 1 });
+  }
+
+  function handlePriorityChange(value: string) {
+    setPriorityFilter(value);
+    setPage(1);
+    updateUrlParams({ priority: value, page: 1 });
+  }
+
+  function handleStatusChange(value: string) {
+    setStatusFilter(value);
+    setPage(1);
+    updateUrlParams({ status: value, page: 1 });
+  }
+
+  function handleSlaChange(value: string) {
+    setSlaFilter(value);
+    setPage(1);
+    updateUrlParams({ slaStatus: value, page: 1 });
+  }
+
+  function handleClearFilters() {
+    setSearchInput("");
+    setSearch("");
+    setSortCombo("urgency");
+    setPriorityFilter("all");
+    setStatusFilter("all");
+    setSlaFilter("all");
+    setPage(1);
+    setPageSize(25);
+    updateUrlParams({
+      search: "",
+      sortCombo: "urgency",
+      priority: "all",
+      status: "all",
+      slaStatus: "all",
+      page: 1,
+      pageSize: 25,
+    });
+  }
+
   // Load Queue Summary & Workload
   const loadOverview = useCallback(async () => {
     try {
@@ -184,16 +496,27 @@ export default function MyWorkPage() {
     }
   }, [handleUnauthorized, isAdmin, isManager]);
 
-  // Load Incidents for the selected tab
+  // Load Incidents for the selected tab and active filters
   const loadTabIncidents = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
+      const { sortBy, sortDirection } = parseSortCombo(sortCombo);
       let queryParams: Record<string, string | number> = {
-        sortBy: "urgency",
-        sortDirection: "desc",
+        sortBy,
+        sortDirection,
+        page,
+        pageSize,
       };
+
+      if (search.trim()) {
+        queryParams.search = search.trim();
+      }
+
+      if (priorityFilter !== "all") {
+        queryParams.priority = priorityFilter;
+      }
 
       if (isTechnician) {
         // Technician queue: incidents assigned to me
@@ -204,37 +527,48 @@ export default function MyWorkPage() {
 
         if (techTab === "assigned") {
           queryParams.status = "Assigned";
+          if (slaFilter !== "all") queryParams.slaStatus = slaFilter;
         } else if (techTab === "inprogress") {
           queryParams.status = "InProgress";
+          if (slaFilter !== "all") queryParams.slaStatus = slaFilter;
         } else if (techTab === "waiting") {
           queryParams.status = "WaitingForUser";
+          if (slaFilter !== "all") queryParams.slaStatus = slaFilter;
         } else if (techTab === "sla") {
-          queryParams.status = "active";
-          queryParams.slaStatus = "Attention";
+          queryParams.status = statusFilter !== "all" ? statusFilter : "active";
+          queryParams.slaStatus = slaFilter !== "all" ? slaFilter : "Attention";
         } else {
           // "all" active assigned to me
-          queryParams.status = "active";
+          queryParams.status = statusFilter !== "all" ? statusFilter : "active";
+          if (slaFilter !== "all") queryParams.slaStatus = slaFilter;
         }
       } else {
         // Manager / Admin operational queues
         if (managerTab === "triage") {
           queryParams.status = "Open";
+          if (slaFilter !== "all") queryParams.slaStatus = slaFilter;
         } else if (managerTab === "unassigned") {
           queryParams.assignment = "unassigned";
-          queryParams.status = "Triaged,Assigned";
+          queryParams.status =
+            statusFilter !== "all" ? statusFilter : "Triaged,Assigned";
+          if (slaFilter !== "all") queryParams.slaStatus = slaFilter;
         } else if (managerTab === "sla") {
-          queryParams.status = "active";
-          queryParams.slaStatus = "Attention";
+          queryParams.status = statusFilter !== "all" ? statusFilter : "active";
+          queryParams.slaStatus = slaFilter !== "all" ? slaFilter : "Attention";
         } else if (managerTab === "resolved") {
           queryParams.status = "Resolved";
+          if (slaFilter !== "all") queryParams.slaStatus = slaFilter;
         } else {
-          // "active"
-          queryParams.status = "active";
+          // "active" (backend excludes Resolved and Closed)
+          queryParams.status = statusFilter !== "all" ? statusFilter : "active";
+          if (slaFilter !== "all") queryParams.slaStatus = slaFilter;
         }
       }
 
-      const items = await getIncidents(queryParams);
-      setIncidents(items);
+      const result = await getIncidentsPaged(queryParams);
+      setIncidents(result.items);
+      setTotalCount(result.totalCount);
+      setTotalPages(result.totalPages);
     } catch (err) {
       if (isUnauthorizedError(err)) {
         handleUnauthorized();
@@ -250,6 +584,13 @@ export default function MyWorkPage() {
     handleUnauthorized,
     isTechnician,
     managerTab,
+    page,
+    pageSize,
+    priorityFilter,
+    search,
+    slaFilter,
+    sortCombo,
+    statusFilter,
     techTab,
     user,
   ]);
@@ -450,7 +791,7 @@ export default function MyWorkPage() {
                   type="button"
                   id="tab-all-assigned"
                   className={`queue-tab-btn ${techTab === "all" ? "active" : ""}`}
-                  onClick={() => setTechTab("all")}
+                  onClick={() => handleSelectTechTab("all")}
                 >
                   All Assigned
                   <span className="queue-tab-badge">
@@ -468,7 +809,7 @@ export default function MyWorkPage() {
                   className={`queue-tab-btn ${
                     techTab === "assigned" ? "active" : ""
                   }`}
-                  onClick={() => setTechTab("assigned")}
+                  onClick={() => handleSelectTechTab("assigned")}
                 >
                   Assigned
                   <span className="queue-tab-badge">
@@ -486,7 +827,7 @@ export default function MyWorkPage() {
                   className={`queue-tab-btn ${
                     techTab === "inprogress" ? "active" : ""
                   }`}
-                  onClick={() => setTechTab("inprogress")}
+                  onClick={() => handleSelectTechTab("inprogress")}
                 >
                   In Progress
                   <span className="queue-tab-badge">
@@ -504,7 +845,7 @@ export default function MyWorkPage() {
                   className={`queue-tab-btn ${
                     techTab === "waiting" ? "active" : ""
                   }`}
-                  onClick={() => setTechTab("waiting")}
+                  onClick={() => handleSelectTechTab("waiting")}
                 >
                   Waiting for User
                   <span className="queue-tab-badge">
@@ -522,7 +863,7 @@ export default function MyWorkPage() {
                   className={`queue-tab-btn alert-tab ${
                     techTab === "sla" ? "active" : ""
                   }`}
-                  onClick={() => setTechTab("sla")}
+                  onClick={() => handleSelectTechTab("sla")}
                 >
                   SLA Attention
                   <span className="queue-tab-badge alert">
@@ -542,7 +883,7 @@ export default function MyWorkPage() {
                   className={`queue-tab-btn ${
                     managerTab === "triage" ? "active" : ""
                   }`}
-                  onClick={() => setManagerTab("triage")}
+                  onClick={() => handleSelectManagerTab("triage")}
                 >
                   Triage
                   <span className="queue-tab-badge highlight">
@@ -560,7 +901,7 @@ export default function MyWorkPage() {
                   className={`queue-tab-btn ${
                     managerTab === "unassigned" ? "active" : ""
                   }`}
-                  onClick={() => setManagerTab("unassigned")}
+                  onClick={() => handleSelectManagerTab("unassigned")}
                 >
                   Unassigned
                   <span className="queue-tab-badge highlight">
@@ -578,7 +919,7 @@ export default function MyWorkPage() {
                   className={`queue-tab-btn alert-tab ${
                     managerTab === "sla" ? "active" : ""
                   }`}
-                  onClick={() => setManagerTab("sla")}
+                  onClick={() => handleSelectManagerTab("sla")}
                 >
                   SLA Attention
                   <span className="queue-tab-badge alert">
@@ -596,7 +937,7 @@ export default function MyWorkPage() {
                   className={`queue-tab-btn ${
                     managerTab === "active" ? "active" : ""
                   }`}
-                  onClick={() => setManagerTab("active")}
+                  onClick={() => handleSelectManagerTab("active")}
                 >
                   Active
                   <span className="queue-tab-badge">
@@ -614,7 +955,7 @@ export default function MyWorkPage() {
                   className={`queue-tab-btn ${
                     managerTab === "resolved" ? "active" : ""
                   }`}
-                  onClick={() => setManagerTab("resolved")}
+                  onClick={() => handleSelectManagerTab("resolved")}
                 >
                   Resolved / Awaiting Closure
                   <span className="queue-tab-badge">
@@ -628,6 +969,114 @@ export default function MyWorkPage() {
               </nav>
             )}
           </div>
+
+          {/* Section 13A: My Work Search, Filters & Sorting Toolbar */}
+          <section className="filter-toolbar" aria-label="My Work queue filters">
+            <form className="filter-search-form" onSubmit={handleSearchSubmit}>
+              <input
+                type="search"
+                id="my-work-search-input"
+                className="filter-search-input"
+                placeholder="Search incident #, title, reporter…"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                aria-label="Search incidents in this queue"
+              />
+              <button
+                type="submit"
+                id="my-work-search-submit-btn"
+                className="filter-btn secondary"
+              >
+                Search
+              </button>
+            </form>
+
+            <div className="filter-group">
+              {/* Sort Dropdown */}
+              <select
+                id="my-work-sort-select"
+                className="filter-select"
+                value={sortCombo}
+                onChange={(e) => handleSortChange(e.target.value)}
+                aria-label="Sort queue incidents"
+              >
+                <option value="urgency">Sort: SLA Urgency (Default)</option>
+                <option value="createdat_desc">Sort: Newest First</option>
+                <option value="createdat_asc">Sort: Oldest First</option>
+                <option value="priority_desc">Sort: Priority (Highest)</option>
+                <option value="priority_asc">Sort: Priority (Lowest)</option>
+                <option value="updatedat_desc">Sort: Recently Updated</option>
+              </select>
+
+              {/* Priority Filter */}
+              <select
+                id="my-work-priority-select"
+                className="filter-select"
+                value={priorityFilter}
+                onChange={(e) => handlePriorityChange(e.target.value)}
+                aria-label="Filter by priority"
+              >
+                <option value="all">All Priorities</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+
+              {/* Context-Aware Status Filter */}
+              {statusOptions && statusOptions.length > 0 && (
+                <select
+                  id="my-work-status-select"
+                  className="filter-select"
+                  value={statusFilter}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  aria-label="Filter by status"
+                >
+                  {statusOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {/* Context-Aware SLA Filter */}
+              <select
+                id="my-work-sla-select"
+                className="filter-select"
+                value={slaFilter}
+                onChange={(e) => handleSlaChange(e.target.value)}
+                aria-label="Filter by SLA status"
+              >
+                {isSlaTab ? (
+                  <>
+                    <option value="all">All SLA Attention</option>
+                    <option value="Breached">Breached</option>
+                    <option value="AtRisk">At Risk</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="all">All SLA States</option>
+                    <option value="OnTrack">On Track</option>
+                    <option value="AtRisk">At Risk</option>
+                    <option value="Breached">Breached</option>
+                  </>
+                )}
+              </select>
+
+              {/* Clear Filters button */}
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  id="my-work-clear-filters-btn"
+                  className="filter-btn reset"
+                  onClick={handleClearFilters}
+                >
+                  Clear Filters
+                </button>
+              )}
+            </div>
+          </section>
 
           {/* Incident Queue Table */}
           <section className="detail-card detail-card-wide table-card">
@@ -656,13 +1105,13 @@ export default function MyWorkPage() {
                   {loading ? (
                     <Skeleton variant="pill" width={22} height={16} />
                   ) : (
-                    incidents.length
+                    totalCount
                   )}
                 </span>
               </h2>
 
               <span className="table-header-meta">
-                Sorted by SLA Urgency
+                {getSortMetaLabel(sortCombo)}
               </span>
             </div>
 
@@ -723,19 +1172,33 @@ export default function MyWorkPage() {
               </div>
             ) : incidents.length === 0 ? (
               <div className="table-empty-state">
-                <p>
-                  {isTechnician
-                    ? techTab === "sla"
-                      ? "No incidents assigned to you currently require SLA attention."
-                      : "No incidents are currently assigned to you in this queue."
-                    : managerTab === "triage"
-                      ? "No incidents are awaiting triage."
-                      : managerTab === "unassigned"
-                        ? "No operational incidents are currently unassigned."
-                        : managerTab === "sla"
-                          ? "No incidents currently require SLA attention."
-                          : "No incidents in this operational queue."}
-                </p>
+                {hasActiveFilters ? (
+                  <>
+                    <p>No incidents match the selected filters in this queue.</p>
+                    <button
+                      type="button"
+                      id="my-work-empty-clear-btn"
+                      className="filter-btn secondary"
+                      onClick={handleClearFilters}
+                    >
+                      Clear Filters
+                    </button>
+                  </>
+                ) : (
+                  <p>
+                    {isTechnician
+                      ? techTab === "sla"
+                        ? "No incidents assigned to you currently require SLA attention."
+                        : "No incidents are currently assigned to you in this queue."
+                      : managerTab === "triage"
+                        ? "No incidents are awaiting triage."
+                        : managerTab === "unassigned"
+                          ? "No operational incidents are currently unassigned."
+                          : managerTab === "sla"
+                            ? "No incidents currently require SLA attention."
+                            : "No incidents in this operational queue."}
+                  </p>
+                )}
               </div>
             ) : (
               <div className="table-responsive">
@@ -908,6 +1371,96 @@ export default function MyWorkPage() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {totalCount > 0 && (
+              <div className="pagination-bar" aria-label="Pagination">
+                <div className="pagination-info">
+                  Page <strong>{page}</strong> of <strong>{Math.max(1, totalPages)}</strong> (
+                  {totalCount} {totalCount === 1 ? "incident" : "incidents"})
+                </div>
+
+                <div className="pagination-actions">
+                  <button
+                    type="button"
+                    id="my-work-pagination-prev"
+                    className="page-nav-button"
+                    disabled={page <= 1 || loading}
+                    onClick={() => {
+                      const newPage = page - 1;
+                      setPage(newPage);
+                      updateUrlParams({ page: newPage });
+                    }}
+                  >
+                    ← Previous
+                  </button>
+
+                  <div className="page-numbers">
+                    {Array.from({ length: Math.max(1, totalPages) }, (_, i) => i + 1)
+                      .filter((p) => {
+                        return (
+                          p === 1 ||
+                          p === totalPages ||
+                          (p >= page - 2 && p <= page + 2)
+                        );
+                      })
+                      .map((p, idx, arr) => {
+                        const prev = arr[idx - 1];
+                        return (
+                          <span key={p} className="page-btn-wrapper">
+                            {prev && p - prev > 1 && (
+                              <span className="page-ellipsis">…</span>
+                            )}
+                            <button
+                              type="button"
+                              className={`page-number ${
+                                p === page ? "active" : ""
+                              }`}
+                              disabled={p === page || loading}
+                              onClick={() => {
+                                setPage(p);
+                                updateUrlParams({ page: p });
+                              }}
+                            >
+                              {p}
+                            </button>
+                          </span>
+                        );
+                      })}
+                  </div>
+
+                  <button
+                    type="button"
+                    id="my-work-pagination-next"
+                    className="page-nav-button"
+                    disabled={page >= totalPages || loading}
+                    onClick={() => {
+                      const newPage = page + 1;
+                      setPage(newPage);
+                      updateUrlParams({ page: newPage });
+                    }}
+                  >
+                    Next →
+                  </button>
+
+                  <select
+                    id="my-work-page-size-select"
+                    className="page-size-select"
+                    value={pageSize}
+                    onChange={(e) => {
+                      const newSize = parseInt(e.target.value, 10);
+                      setPageSize(newSize);
+                      setPage(1);
+                      updateUrlParams({ pageSize: newSize, page: 1 });
+                    }}
+                    aria-label="Items per page"
+                  >
+                    <option value="25">25 / page</option>
+                    <option value="50">50 / page</option>
+                  </select>
+                </div>
               </div>
             )}
           </section>

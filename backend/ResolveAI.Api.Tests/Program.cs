@@ -42,6 +42,7 @@ public class Program
         RunSuite("AiIncidentServiceTests", () => new AiIncidentServiceTests().RunAllTests());
         RunSuite("AIResolutionAssistantTests", () => new AIResolutionAssistantTests().RunAllTests());
         RunSuite("ExternalEmailDeliveryTests", () => new ExternalEmailDeliveryTests().RunAllTests());
+        RunSuite("AnalyticsTrendTests", () => new AnalyticsTrendTests().RunAllTests());
 
         stopwatch.Stop();
 

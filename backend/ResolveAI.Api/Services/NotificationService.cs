@@ -308,10 +308,12 @@ public class NotificationService : INotificationService
             return;
         }
 
+        var statusTitle = GetStatusChangeTitle(oldStatus, newStatus);
+
         await QueueNotificationAsync(
             incident.ReporterId,
             NotificationType.IncidentStatusChanged,
-            "Incident status updated",
+            statusTitle,
             $"{incident.IncidentNumber} · status changed from {FormatStatus(oldStatus)} to {FormatStatus(newStatus)} by {actorName}.",
             incident.Id,
             incident.Title,
@@ -326,7 +328,7 @@ public class NotificationService : INotificationService
             await QueueNotificationAsync(
                 incident.AssignedToId.Value,
                 NotificationType.IncidentStatusChanged,
-                "Assigned incident status updated",
+                statusTitle,
                 $"{incident.IncidentNumber} · status changed from {FormatStatus(oldStatus)} to {FormatStatus(newStatus)} by {actorName}.",
                 incident.Id,
                 incident.Title,
@@ -337,6 +339,22 @@ public class NotificationService : INotificationService
                 isEmailEligible: false);
         }
     }
+
+    public static string GetStatusChangeTitle(IncidentStatus oldStatus, IncidentStatus newStatus) =>
+        (oldStatus, newStatus) switch
+        {
+            (IncidentStatus.Assigned, IncidentStatus.InProgress) => "Incident moved to In Progress",
+            (IncidentStatus.WaitingForUser, IncidentStatus.InProgress) => "Incident work resumed",
+            (IncidentStatus.InProgress, IncidentStatus.WaitingForUser) => "Incident waiting for user",
+            (IncidentStatus.Open, IncidentStatus.Triaged) => "Incident triaged",
+            (_, IncidentStatus.Resolved) => "Incident resolved",
+            (IncidentStatus.Resolved, IncidentStatus.Closed) => "Incident closed",
+            (_, IncidentStatus.Closed) => "Incident administratively closed",
+            (_, IncidentStatus.InProgress) => "Incident moved to In Progress",
+            (_, IncidentStatus.WaitingForUser) => "Incident waiting for user",
+            (_, IncidentStatus.Triaged) => "Incident triaged",
+            _ => "Incident status updated"
+        };
 
     public async Task QueuePriorityChangedAsync(
         Incident incident,

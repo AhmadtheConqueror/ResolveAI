@@ -406,65 +406,150 @@ public class AnalyticsController : ControllerBase
         };
     }
 
-    private static List<object> BuildTrend(
+    public static List<AnalyticsTrendPoint> BuildTrend(
         IReadOnlyList<AnalyticsIncidentRow> createdInPeriod,
         AnalyticsPeriod period)
     {
-        if (period.From.HasValue &&
-            (period.To - period.From.Value).TotalDays <= 120)
+        var normalizedRange = period.Range?.Trim().ToLowerInvariant();
+
+        // 7 days and 30 days are always daily buckets
+        if (normalizedRange is "7" or "7d" or "7days" or "30" or "30d" or "30days")
         {
-            var counts = createdInPeriod
-                .GroupBy(row => row.CreatedAt.Date)
-                .ToDictionary(group => group.Key, group => group.Count());
+            return BuildDailyTrend(createdInPeriod, period.From!.Value.Date, period.To.Date);
+        }
 
-            var items = new List<object>();
-            var cursor = period.From.Value.Date;
-            var endDate = period.To.Date;
+        // 90 days is weekly buckets
+        if (normalizedRange is "90" or "90d" or "90days")
+        {
+            return BuildWeeklyTrend(createdInPeriod, period.From!.Value.Date, period.To.Date);
+        }
 
-            while (cursor <= endDate)
+        // All Time range
+        if (normalizedRange is "all" or "alltime" || !period.From.HasValue)
+        {
+            if (createdInPeriod.Count == 0)
             {
-                items.Add(new
-                {
-                    date = cursor.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    count = counts.GetValueOrDefault(cursor, 0)
-                });
-
-                cursor = cursor.AddDays(1);
+                return new List<AnalyticsTrendPoint>();
             }
 
-            return items;
+            var minDate = createdInPeriod.Min(row => row.CreatedAt).Date;
+            var maxDate = period.To.Date;
+            if (maxDate < minDate)
+            {
+                maxDate = minDate;
+            }
+
+            var monthSpan = ((maxDate.Year - minDate.Year) * 12) + maxDate.Month - minDate.Month + 1;
+            var totalDays = (maxDate - minDate).TotalDays;
+
+            // If data spans 3 or more months, monthly buckets form a useful trend
+            if (monthSpan >= 3)
+            {
+                return BuildMonthlyTrend(createdInPeriod, minDate, maxDate);
+            }
+
+            // If data spans 1 or 2 months:
+            // - 31 days or fewer: daily buckets so the chart displays a meaningful trend
+            // - more than 31 days: weekly buckets
+            if (totalDays <= 31)
+            {
+                return BuildDailyTrend(createdInPeriod, minDate, maxDate);
+            }
+
+            return BuildWeeklyTrend(createdInPeriod, minDate, maxDate);
         }
 
-        if (createdInPeriod.Count == 0)
+        // Custom range with period.From.HasValue
+        var customTotalDays = (period.To.Date - period.From.Value.Date).TotalDays;
+        if (customTotalDays <= 31)
         {
-            return new List<object>();
+            return BuildDailyTrend(createdInPeriod, period.From.Value.Date, period.To.Date);
+        }
+        if (customTotalDays <= 120)
+        {
+            return BuildWeeklyTrend(createdInPeriod, period.From.Value.Date, period.To.Date);
         }
 
+        return BuildMonthlyTrend(createdInPeriod, period.From.Value.Date, period.To.Date);
+    }
+
+    public static List<AnalyticsTrendPoint> BuildDailyTrend(
+        IReadOnlyList<AnalyticsIncidentRow> createdInPeriod,
+        DateTime startDate,
+        DateTime endDate)
+    {
+        var counts = createdInPeriod
+            .GroupBy(row => row.CreatedAt.Date)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        var items = new List<AnalyticsTrendPoint>();
+        var cursor = startDate;
+
+        while (cursor <= endDate)
+        {
+            items.Add(new AnalyticsTrendPoint(
+                cursor.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                counts.GetValueOrDefault(cursor, 0),
+                "daily"
+            ));
+
+            cursor = cursor.AddDays(1);
+        }
+
+        return items;
+    }
+
+    public static List<AnalyticsTrendPoint> BuildWeeklyTrend(
+        IReadOnlyList<AnalyticsIncidentRow> createdInPeriod,
+        DateTime startDate,
+        DateTime endDate)
+    {
+        var items = new List<AnalyticsTrendPoint>();
+        var cursor = startDate;
+
+        while (cursor <= endDate)
+        {
+            var weekEnd = cursor.AddDays(6) > endDate ? endDate : cursor.AddDays(6);
+            var count = createdInPeriod.Count(r => r.CreatedAt.Date >= cursor && r.CreatedAt.Date <= weekEnd);
+
+            items.Add(new AnalyticsTrendPoint(
+                cursor.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                count,
+                "weekly",
+                weekEnd.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            ));
+
+            cursor = cursor.AddDays(7);
+        }
+
+        return items;
+    }
+
+    public static List<AnalyticsTrendPoint> BuildMonthlyTrend(
+        IReadOnlyList<AnalyticsIncidentRow> createdInPeriod,
+        DateTime startDate,
+        DateTime endDate)
+    {
         var monthlyCounts = createdInPeriod
             .GroupBy(row => new DateTime(row.CreatedAt.Year, row.CreatedAt.Month, 1))
             .ToDictionary(group => group.Key, group => group.Count());
 
-        var start = period.From?.Date ??
-            new DateTime(
-                createdInPeriod.Min(row => row.CreatedAt).Year,
-                createdInPeriod.Min(row => row.CreatedAt).Month,
-                1);
-        var monthCursor = new DateTime(start.Year, start.Month, 1);
-        var lastMonth = new DateTime(period.To.Year, period.To.Month, 1);
-        var monthly = new List<object>();
+        var monthCursor = new DateTime(startDate.Year, startDate.Month, 1);
+        var lastMonth = new DateTime(endDate.Year, endDate.Month, 1);
+        var items = new List<AnalyticsTrendPoint>();
 
         while (monthCursor <= lastMonth)
         {
-            monthly.Add(new
-            {
-                date = monthCursor.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                count = monthlyCounts.GetValueOrDefault(monthCursor, 0)
-            });
+            items.Add(new AnalyticsTrendPoint(
+                monthCursor.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                monthlyCounts.GetValueOrDefault(monthCursor, 0),
+                "monthly"
+            ));
 
             monthCursor = monthCursor.AddMonths(1);
         }
 
-        return monthly;
+        return items;
     }
 
     private static AnalyticsPeriod ResolvePeriod(
@@ -562,7 +647,13 @@ public class AnalyticsController : ControllerBase
             out userId);
     }
 
-    private sealed class AnalyticsIncidentRow
+    public sealed record AnalyticsTrendPoint(
+        string date,
+        int count,
+        string granularity,
+        string? dateEnd = null);
+
+    public sealed class AnalyticsIncidentRow
     {
         public Guid Id { get; set; }
         public string IncidentNumber { get; set; } = string.Empty;
@@ -587,7 +678,7 @@ public class AnalyticsController : ControllerBase
         public double? SuccessPercent { get; set; }
     }
 
-    private sealed record AnalyticsPeriod(
+    public sealed record AnalyticsPeriod(
         DateTime? From,
         DateTime To,
         string Range,

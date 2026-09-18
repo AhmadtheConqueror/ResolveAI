@@ -1013,7 +1013,7 @@ export default function IncidentDetailsPage() {
         message:
           error instanceof Error && error.message.trim()
             ? error.message
-            : "AI analysis is temporarily unavailable. Please try again.",
+            : "AI triage analysis is temporarily unavailable. Please try again.",
       });
     } finally {
       setRunningAnalysis(false);
@@ -1573,9 +1573,9 @@ export default function IncidentDetailsPage() {
                       <div className="person-block">
                         <span>Reporter</span>
                         <strong>{incident.reporter.name}</strong>
-                        <a href={`mailto:${incident.reporter.email}`}>
+                        <span className="person-email">
                           {incident.reporter.email}
-                        </a>
+                        </span>
                       </div>
 
                       <div className="person-block">
@@ -1584,11 +1584,9 @@ export default function IncidentDetailsPage() {
                         {incident.assignedTo ? (
                           <>
                             <strong>{incident.assignedTo.name}</strong>
-                            <a
-                              href={`mailto:${incident.assignedTo.email}`}
-                            >
+                            <span className="person-email">
                               {incident.assignedTo.email}
-                            </a>
+                            </span>
                           </>
                         ) : (
                           <strong>Unassigned</strong>
@@ -1960,14 +1958,19 @@ export default function IncidentDetailsPage() {
                     )}
                   </section>
 
-                  {/* ── AI Analysis Panel ── */}
-                  <section className="detail-card detail-card-wide ai-panel">
+                  {/* ── AI Analysis Panel (Phase 1) ── */}
+                  <section className="detail-card detail-card-wide ai-panel" id="ai-triage-panel">
                     <div className="ai-panel-header">
                       <div className="ai-panel-title">
                         <span className="ai-panel-icon" aria-hidden="true">
                           ✦
                         </span>
-                        <h2>ResolveAI&nbsp;Analysis</h2>
+                        <div>
+                          <h2>AI Incident Triage &amp; Classification</h2>
+                          <p className="ai-panel-subtitle">
+                            Initial categorization, priority assessment, and triage recommendations for service desk dispatch.
+                          </p>
+                        </div>
                       </div>
 
                       {user && canRunAIAnalysis(user, incident) && (
@@ -1979,8 +1982,8 @@ export default function IncidentDetailsPage() {
                           onClick={() => void handleRunAIAnalysis()}
                         >
                           {runningAnalysis
-                            ? "Analyzing…"
-                            : "Analyze with AI"}
+                            ? "Analyzing Triage…"
+                            : "Run Triage Analysis"}
                         </button>
                       )}
                     </div>
@@ -2415,9 +2418,9 @@ export default function IncidentDetailsPage() {
                             🔍
                           </span>
                           <div>
-                            <h2>AI Resolution Assistant</h2>
+                            <h2>AI Resolution Assistant (Evidence-Based)</h2>
                             <p className="ai-panel-subtitle">
-                              Evidence-based decision support from previously resolved ResolveAI incidents.
+                              Technical diagnostic support and step-by-step guidance derived from historical ResolveAI resolutions.
                             </p>
                           </div>
                         </div>
@@ -2433,7 +2436,7 @@ export default function IncidentDetailsPage() {
                             {runningResolutionAssistant
                               ? "Analyzing Evidence…"
                               : resolutionAnalyses.length > 0
-                                ? "Refresh Assistance"
+                                ? "Refresh Resolution Assistance"
                                 : "Generate Resolution Assistance"}
                           </button>
                         )}

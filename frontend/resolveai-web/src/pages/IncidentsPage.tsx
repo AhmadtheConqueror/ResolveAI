@@ -162,7 +162,12 @@ export default function IncidentsPage() {
     (newParams: Record<string, string | number>) => {
       const updated = new URLSearchParams(searchParams);
       for (const [k, v] of Object.entries(newParams)) {
-        if (!v || v === "all" || (k === "page" && v === 1)) {
+        if (
+          !v ||
+          v === "all" ||
+          (k === "page" && Number(v) === 1) ||
+          (k === "pageSize" && Number(v) === 25)
+        ) {
           updated.delete(k);
         } else {
           updated.set(k, String(v));
@@ -172,6 +177,7 @@ export default function IncidentsPage() {
     },
     [searchParams, setSearchParams]
   );
+
 
   // Load options (categories, priorities)
   useEffect(() => {
@@ -313,6 +319,7 @@ export default function IncidentsPage() {
     setSortBy("updatedAt");
     setSortDir("desc");
     setPage(1);
+    setPageSize(25);
     setSearchParams(new URLSearchParams(), { replace: true });
   }
 
@@ -687,11 +694,11 @@ export default function IncidentsPage() {
             )}
 
             {/* Pagination Controls */}
-            {totalPages > 1 && (
+            {totalCount > 0 && (
               <div className="pagination-bar" aria-label="Pagination">
                 <div className="pagination-info">
-                  Page <strong>{page}</strong> of <strong>{totalPages}</strong> (
-                  {totalCount} incidents)
+                  Page <strong>{page}</strong> of <strong>{Math.max(1, totalPages)}</strong> (
+                  {totalCount} {totalCount === 1 ? "incident" : "incidents"})
                 </div>
 
                 <div className="pagination-actions">
@@ -710,7 +717,7 @@ export default function IncidentsPage() {
                   </button>
 
                   <div className="page-numbers">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    {Array.from({ length: Math.max(1, totalPages) }, (_, i) => i + 1)
                       .filter((p) => {
                         return (
                           p === 1 ||

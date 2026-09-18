@@ -202,6 +202,7 @@ export default function DashboardPage() {
 
             <button
               type="button"
+              id="dashboard-new-incident-btn"
               className="new-incident-button"
               onClick={() => setShowNewIncident(true)}
             >

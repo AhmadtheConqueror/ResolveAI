@@ -159,6 +159,13 @@ export type NotificationsResponse = {
 
 export type AnalyticsRange = "7" | "30" | "90" | "all";
 
+export type AnalyticsTrendPoint = {
+  date: string;
+  dateEnd?: string | null;
+  count: number;
+  granularity?: "daily" | "weekly" | "monthly";
+};
+
 export type AnalyticsOverview = {
   period: {
     from: string | null;
@@ -173,10 +180,7 @@ export type AnalyticsOverview = {
     averageFirstResponseMinutes: number | null;
     averageResolutionMinutes: number | null;
   };
-  incidentTrend: Array<{
-    date: string;
-    count: number;
-  }>;
+  incidentTrend: AnalyticsTrendPoint[];
   byStatus: Array<{
     status: string;
     count: number;
