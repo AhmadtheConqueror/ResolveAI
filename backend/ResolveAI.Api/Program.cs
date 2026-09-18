@@ -50,8 +50,17 @@ builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>(client =>
 });
 builder.Services.AddHostedService<ExternalNotificationDeliveryWorker>();
 
+builder.Services.AddScoped<IResolutionEvidenceService, ResolutionEvidenceService>();
+
 builder.Services
     .AddHttpClient<IAIIncidentService, GeminiIncidentService>(client =>
+    {
+        client.BaseAddress = new Uri("https://generativelanguage.googleapis.com");
+        client.Timeout = TimeSpan.FromSeconds(90);
+    });
+
+builder.Services
+    .AddHttpClient<IAIResolutionAssistantService, GeminiResolutionAssistantService>(client =>
     {
         client.BaseAddress = new Uri("https://generativelanguage.googleapis.com");
         client.Timeout = TimeSpan.FromSeconds(90);

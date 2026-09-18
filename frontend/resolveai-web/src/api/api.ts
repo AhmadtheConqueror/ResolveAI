@@ -336,6 +336,47 @@ export type IncidentAIAnalysis = {
   } | null;
 };
 
+export type SuggestedResolutionStep = {
+  stepNumber: number;
+  action: string;
+  reason: string;
+  evidenceIncidentNumbers: string[];
+};
+
+export type SimilarResolvedIncidentEvidence = {
+  incidentId: string;
+  incidentNumber: string;
+  title: string;
+  category: string;
+  resolvedAt: string | null;
+  resolutionExcerpt: string;
+  matchStrength: "High" | "Moderate" | "Low" | string;
+  reasonForMatch: string;
+};
+
+export type IncidentAIResolutionAnalysis = {
+  id: string;
+  incidentId: string;
+  summary: string;
+  likelyIssue: string;
+  confidence: "High" | "Moderate" | "Low" | string;
+  suggestedSteps: SuggestedResolutionStep[];
+  evidence: SimilarResolvedIncidentEvidence[];
+  caveats: string;
+  hasSufficientEvidence: boolean;
+  candidateCount: number;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  createdAt: string;
+  requestedByUserId: string;
+  requestedByUser?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+};
+
 export type IncidentOption = {
   id: string;
   name: string;
@@ -1048,6 +1089,39 @@ export async function getIncidentAIAnalyses(incidentId: string) {
       notFound: "Incident not found.",
       server: "Unable to load AI analysis history.",
       parse: "ResolveAI returned unexpected AI analysis history.",
+    }
+  );
+}
+
+export async function generateIncidentAIResolutionAnalysis(incidentId: string) {
+  return requestJson<IncidentAIResolutionAnalysis>(
+    `/api/incidents/${incidentId}/ai-resolution-analysis`,
+    {
+      method: "POST",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to generate AI resolution assistance.",
+      server: "AI resolution assistance is temporarily unavailable. Please try again.",
+      parse: "ResolveAI returned unexpected AI resolution assistance data.",
+    }
+  );
+}
+
+export async function getIncidentAIResolutionAnalyses(incidentId: string) {
+  return requestJson<IncidentAIResolutionAnalysis[]>(
+    `/api/incidents/${incidentId}/ai-resolution-analysis`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+    },
+    {
+      network: "Unable to connect to ResolveAI.",
+      forbidden: "You do not have permission to view AI resolution assistance.",
+      notFound: "Incident not found.",
+      server: "Unable to load AI resolution assistance history.",
+      parse: "ResolveAI returned unexpected AI resolution history.",
     }
   );
 }

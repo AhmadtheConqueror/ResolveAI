@@ -31,4 +31,7 @@ public class AppUser
 
     public ICollection<IncidentAIAnalysis> RequestedAIAnalyses { get; set; } =
         new List<IncidentAIAnalysis>();
+
+    public ICollection<IncidentAIResolutionAnalysis> RequestedAIResolutionAnalyses { get; set; } =
+        new List<IncidentAIResolutionAnalysis>();
 }

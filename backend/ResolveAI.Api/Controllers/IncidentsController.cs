@@ -8,6 +8,7 @@ using ResolveAI.Api.Data;
 using ResolveAI.Api.DTOs;
 using ResolveAI.Api.Entities;
 using ResolveAI.Api.Enums;
+using ResolveAI.Api.Models.AI;
 using ResolveAI.Api.Models.Sla;
 using ResolveAI.Api.Services;
 
@@ -21,6 +22,8 @@ public class IncidentsController : ControllerBase
     private readonly AppDbContext _context;
     private readonly IncidentWorkflowService _workflow;
     private readonly IAIIncidentService _aiIncidentService;
+    private readonly IResolutionEvidenceService _evidenceService;
+    private readonly IAIResolutionAssistantService _aiResolutionAssistantService;
     private readonly ISlaService _slaService;
     private readonly INotificationService _notificationService;
     private readonly IIncidentAuditService _auditService;
@@ -29,6 +32,8 @@ public class IncidentsController : ControllerBase
         AppDbContext context,
         IncidentWorkflowService workflow,
         IAIIncidentService aiIncidentService,
+        IResolutionEvidenceService evidenceService,
+        IAIResolutionAssistantService aiResolutionAssistantService,
         ISlaService slaService,
         INotificationService notificationService,
         IIncidentAuditService auditService)
@@ -36,6 +41,8 @@ public class IncidentsController : ControllerBase
         _context = context;
         _workflow = workflow;
         _aiIncidentService = aiIncidentService;
+        _evidenceService = evidenceService;
+        _aiResolutionAssistantService = aiResolutionAssistantService;
         _slaService = slaService;
         _notificationService = notificationService;
         _auditService = auditService;
@@ -1394,6 +1401,153 @@ public class IncidentsController : ControllerBase
         });
     }
 
+    [HttpPost("{id:guid}/ai-resolution-analysis")]
+    [EnableRateLimiting("ai-limiter")]
+    public async Task<IActionResult> GenerateAIResolutionAnalysis(Guid id)
+    {
+        if (!TryGetAuthenticatedUser(out var userId, out var role))
+        {
+            return Unauthorized(new
+            {
+                message = "Invalid authenticated user."
+            });
+        }
+
+        var incident = await _context.Incidents
+            .Include(i => i.Category)
+            .Include(i => i.Priority)
+            .Include(i => i.Comments)
+                .ThenInclude(c => c.User)
+                    .ThenInclude(u => u.Role)
+            .SingleOrDefaultAsync(i => i.Id == id);
+
+        if (incident is null)
+        {
+            return NotFound(new
+            {
+                message = "Incident not found."
+            });
+        }
+
+        if (!CanGenerateAIResolutionAnalysis(role, userId, incident))
+        {
+            return Forbid();
+        }
+
+        if (!IsActiveIncidentStatus(incident.Status))
+        {
+            return BadRequest(new
+            {
+                message = "AI resolution assistance can only be generated for active incidents."
+            });
+        }
+
+        try
+        {
+            var candidates = await _evidenceService.GetCandidatesAsync(
+                incident,
+                25,
+                HttpContext.RequestAborted
+            );
+
+            var result = await _aiResolutionAssistantService.GenerateResolutionAssistanceAsync(
+                incident,
+                candidates,
+                HttpContext.RequestAborted
+            );
+
+            var analysis = new IncidentAIResolutionAnalysis
+            {
+                IncidentId = incident.Id,
+                RequestedByUserId = userId,
+                Summary = result.Summary,
+                LikelyIssue = result.LikelyIssue,
+                Confidence = result.Confidence,
+                SuggestedStepsJson = JsonSerializer.Serialize(result.SuggestedSteps),
+                EvidenceJson = JsonSerializer.Serialize(result.Evidence),
+                Caveats = result.Caveats,
+                HasSufficientEvidence = result.HasSufficientEvidence,
+                CandidateCount = result.CandidateCount,
+                Provider = result.Provider,
+                Model = result.Model,
+                PromptVersion = result.PromptVersion,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.IncidentAIResolutionAnalyses.Add(analysis);
+
+            await _auditService.RecordAIResolutionAnalysisGeneratedAsync(
+                incident,
+                analysis,
+                userId,
+                HttpContext.RequestAborted
+            );
+
+            await _context.SaveChangesAsync();
+
+            var requestingUser = await _context.Users
+                .AsNoTracking()
+                .SingleOrDefaultAsync(u => u.Id == userId);
+
+            return Created(
+                $"/api/incidents/{incident.Id}/ai-resolution-analysis/{analysis.Id}",
+                ToAIResolutionResponse(analysis, requestingUser)
+            );
+        }
+        catch (AIIncidentAnalysisException exception)
+        {
+            var message = exception.IsConfigurationError
+                ? "AI resolution assistance is not configured."
+                : "AI resolution assistance is temporarily unavailable. Please try again.";
+
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new
+                {
+                    message
+                }
+            );
+        }
+    }
+
+    [HttpGet("{id:guid}/ai-resolution-analysis")]
+    public async Task<IActionResult> GetAIResolutionAnalyses(Guid id)
+    {
+        if (!TryGetAuthenticatedUser(out var userId, out var role))
+        {
+            return Unauthorized(new
+            {
+                message = "Invalid authenticated user."
+            });
+        }
+
+        var incident = await _context.Incidents
+            .AsNoTracking()
+            .SingleOrDefaultAsync(i => i.Id == id);
+
+        if (incident is null)
+        {
+            return NotFound(new
+            {
+                message = "Incident not found."
+            });
+        }
+
+        if (!CanAccessAIResolutionAnalysis(role, userId, incident))
+        {
+            return Forbid();
+        }
+
+        var analyses = await _context.IncidentAIResolutionAnalyses
+            .AsNoTracking()
+            .Include(a => a.RequestedByUser)
+            .Where(a => a.IncidentId == id)
+            .OrderByDescending(a => a.CreatedAt)
+            .ToListAsync();
+
+        return Ok(analyses.Select(a => ToAIResolutionResponse(a, a.RequestedByUser)));
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateIncident(
         CreateIncidentRequest request)
@@ -1617,6 +1771,105 @@ public class IncidentsController : ControllerBase
                 incident.AssignedToId == null,
             "Manager" or "Admin" => true,
             _ => false
+        };
+    }
+
+    private static bool CanGenerateAIResolutionAnalysis(
+        string? role,
+        Guid userId,
+        Incident incident)
+    {
+        return role switch
+        {
+            "Technician" => incident.AssignedToId == userId,
+            "Manager" or "Admin" => true,
+            _ => false
+        };
+    }
+
+    private static bool CanAccessAIResolutionAnalysis(
+        string? role,
+        Guid userId,
+        Incident incident)
+    {
+        return role switch
+        {
+            "Technician" => incident.AssignedToId == userId,
+            "Manager" or "Admin" => true,
+            _ => false
+        };
+    }
+
+    private static bool IsActiveIncidentStatus(IncidentStatus status)
+    {
+        return status is IncidentStatus.Open
+            or IncidentStatus.Triaged
+            or IncidentStatus.Assigned
+            or IncidentStatus.InProgress
+            or IncidentStatus.WaitingForUser;
+    }
+
+    private static AIResolutionAnalysisResponse ToAIResolutionResponse(
+        IncidentAIResolutionAnalysis analysis,
+        AppUser? requestedByUser)
+    {
+        var steps = Array.Empty<SuggestedResolutionStep>();
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(analysis.SuggestedStepsJson))
+            {
+                steps = JsonSerializer.Deserialize<SuggestedResolutionStep[]>(
+                    analysis.SuggestedStepsJson,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                ) ?? Array.Empty<SuggestedResolutionStep>();
+            }
+        }
+        catch
+        {
+            // fallback empty
+        }
+
+        var evidence = Array.Empty<SimilarResolvedIncidentEvidence>();
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(analysis.EvidenceJson))
+            {
+                evidence = JsonSerializer.Deserialize<SimilarResolvedIncidentEvidence[]>(
+                    analysis.EvidenceJson,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                ) ?? Array.Empty<SimilarResolvedIncidentEvidence>();
+            }
+        }
+        catch
+        {
+            // fallback empty
+        }
+
+        return new AIResolutionAnalysisResponse
+        {
+            Id = analysis.Id,
+            IncidentId = analysis.IncidentId,
+            Summary = analysis.Summary,
+            LikelyIssue = analysis.LikelyIssue,
+            Confidence = analysis.Confidence,
+            SuggestedSteps = steps,
+            Evidence = evidence,
+            Caveats = analysis.Caveats,
+            HasSufficientEvidence = analysis.HasSufficientEvidence,
+            CandidateCount = analysis.CandidateCount,
+            Provider = analysis.Provider,
+            Model = analysis.Model,
+            PromptVersion = analysis.PromptVersion,
+            CreatedAt = analysis.CreatedAt,
+            RequestedByUserId = analysis.RequestedByUserId,
+            RequestedByUser = requestedByUser is null
+                ? null
+                : new AIRequestedByUserResponse
+                {
+                    Id = requestedByUser.Id,
+                    Name = $"{requestedByUser.FirstName} {requestedByUser.LastName}".Trim(),
+                    Email = requestedByUser.Email
+                }
         };
     }
 }

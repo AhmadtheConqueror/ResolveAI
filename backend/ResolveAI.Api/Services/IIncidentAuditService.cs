@@ -56,6 +56,12 @@ public interface IIncidentAuditService
         Guid requestedByUserId,
         CancellationToken cancellationToken = default);
 
+    Task RecordAIResolutionAnalysisGeneratedAsync(
+        Incident incident,
+        IncidentAIResolutionAnalysis analysis,
+        Guid requestedByUserId,
+        CancellationToken cancellationToken = default);
+
     Task RecordAIRecommendationAppliedAsync(
         Incident incident,
         IncidentAIAnalysis analysis,

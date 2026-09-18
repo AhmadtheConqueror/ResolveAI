@@ -40,6 +40,7 @@ public class Program
         RunSuite("AuditTrailTests", () => new AuditTrailTests().RunAllTests());
         RunSuite("UserAdminAndAuthTests", () => new UserAdminAndAuthTests().RunAllTests());
         RunSuite("AiIncidentServiceTests", () => new AiIncidentServiceTests().RunAllTests());
+        RunSuite("AIResolutionAssistantTests", () => new AIResolutionAssistantTests().RunAllTests());
         RunSuite("ExternalEmailDeliveryTests", () => new ExternalEmailDeliveryTests().RunAllTests());
 
         stopwatch.Stop();

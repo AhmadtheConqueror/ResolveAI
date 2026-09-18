@@ -270,6 +270,43 @@ public class IncidentAuditService : IIncidentAuditService
             analysis.CreatedAt);
     }
 
+    public async Task RecordAIResolutionAnalysisGeneratedAsync(
+        Incident incident,
+        IncidentAIResolutionAnalysis analysis,
+        Guid requestedByUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var requestedByName = await GetUserDisplayNameAsync(
+            requestedByUserId,
+            cancellationToken);
+
+        var metadata = new
+        {
+            analysisId = analysis.Id,
+            analysisType = "ResolutionAssistant",
+            provider = analysis.Provider,
+            model = analysis.Model,
+            hasSufficientEvidence = analysis.HasSufficientEvidence,
+            candidateCount = analysis.CandidateCount,
+            confidence = analysis.Confidence,
+            requestedByUserId,
+            requestedByName
+        };
+
+        AddEvent(
+            incident.Id,
+            IncidentAuditEventType.AIAnalysisGenerated,
+            "AI resolution assistance generated",
+            IncidentAuditActorType.AI,
+            null,
+            AIActorName,
+            null,
+            null,
+            SerializeMetadata(metadata),
+            null,
+            analysis.CreatedAt);
+    }
+
     public async Task RecordAIRecommendationAppliedAsync(
         Incident incident,
         IncidentAIAnalysis analysis,

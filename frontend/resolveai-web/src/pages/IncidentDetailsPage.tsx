@@ -6,8 +6,10 @@ import {
   addIncidentComment,
   applyAIRecommendation,
   assignIncident,
+  generateIncidentAIResolutionAnalysis,
   getIncident,
   getIncidentAIAnalyses,
+  getIncidentAIResolutionAnalyses,
   getIncidentActivity,
   getIncidentComments,
   getTechnicians,
@@ -20,11 +22,13 @@ import {
 import type {
   CurrentUser,
   IncidentAIAnalysis,
+  IncidentAIResolutionAnalysis,
   IncidentActivityEvent,
   IncidentComment,
   IncidentDetail,
   IncidentSla,
   IncidentStatus,
+  SuggestedResolutionStep,
   TechnicianUser,
 } from "../api/api";
 import Sidebar from "../components/Sidebar";
@@ -379,6 +383,41 @@ function canRunAIAnalysis(
   );
 }
 
+function canAccessResolutionAssistant(
+  user: CurrentUser,
+  incident: IncidentDetail
+) {
+  if (user.role === "Employee") {
+    return false;
+  }
+
+  if (isManagerOrAdmin(user.role)) {
+    return true;
+  }
+
+  return (
+    user.role === "Technician" &&
+    incident.assignedTo?.id === user.id
+  );
+}
+
+function canGenerateResolutionAssistant(
+  user: CurrentUser,
+  incident: IncidentDetail
+) {
+  if (!canAccessResolutionAssistant(user, incident)) {
+    return false;
+  }
+
+  return (
+    incident.status === "Open" ||
+    incident.status === "Triaged" ||
+    incident.status === "Assigned" ||
+    incident.status === "InProgress" ||
+    incident.status === "WaitingForUser"
+  );
+}
+
 function getStatusActions(
   incident: IncidentDetail,
   user: CurrentUser
@@ -532,6 +571,17 @@ export default function IncidentDetailsPage() {
     "category" | "priority" | "both" | null
   >(null);
 
+  // AI Resolution Assistant state (Phase 2)
+  const [resolutionAnalyses, setResolutionAnalyses] = useState<
+    IncidentAIResolutionAnalysis[]
+  >([]);
+  const [resolutionLoading, setResolutionLoading] = useState(false);
+  const [runningResolutionAssistant, setRunningResolutionAssistant] =
+    useState(false);
+  const [resolutionNotice, setResolutionNotice] =
+    useState<UiNotice | null>(null);
+  const [copiedSteps, setCopiedSteps] = useState(false);
+
   // Resolution note modal state
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [resolutionText, setResolutionText] = useState("");
@@ -635,6 +685,31 @@ export default function IncidentDetailsPage() {
     }
   }, [handleUnauthorized, id]);
 
+  const loadResolutionAnalyses = useCallback(async () => {
+    if (!id || !user) {
+      return;
+    }
+
+    if (user.role === "Employee") {
+      return;
+    }
+
+    setResolutionLoading(true);
+
+    try {
+      const data = await getIncidentAIResolutionAnalyses(id);
+      setResolutionAnalyses(data);
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      // Silently skip forbidden for unauthorized roles/technicians
+    } finally {
+      setResolutionLoading(false);
+    }
+  }, [handleUnauthorized, id, user]);
+
   const loadIncident = useCallback(async () => {
     if (!id) {
       setError({
@@ -695,7 +770,8 @@ export default function IncidentDetailsPage() {
 
     void Promise.resolve().then(loadIncident);
     void Promise.resolve().then(loadAIAnalyses);
-  }, [handleUnauthorized, loadIncident, loadAIAnalyses, user]);
+    void Promise.resolve().then(loadResolutionAnalyses);
+  }, [handleUnauthorized, loadIncident, loadAIAnalyses, loadResolutionAnalyses, user]);
 
   useEffect(() => {
     if (!user || !isManagerOrAdmin(user.role)) {
@@ -998,6 +1074,63 @@ export default function IncidentDetailsPage() {
     } finally {
       setApplyingRecommendation(null);
     }
+  }
+
+  async function handleRunResolutionAssistant() {
+    if (!id) {
+      return;
+    }
+
+    setRunningResolutionAssistant(true);
+    setResolutionNotice(null);
+
+    try {
+      const result = await generateIncidentAIResolutionAnalysis(id);
+      setResolutionAnalyses((prev) => [result, ...prev]);
+      await loadActivity(1);
+      setResolutionNotice({
+        tone: "success",
+        message: result.hasSufficientEvidence
+          ? "Resolution assistance generated with historical evidence."
+          : "General resolution guidance generated (insufficient historical matches found).",
+      });
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+
+      setResolutionNotice({
+        tone: "error",
+        message:
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : "AI resolution assistance is temporarily unavailable. Please try again.",
+      });
+    } finally {
+      setRunningResolutionAssistant(false);
+    }
+  }
+
+  function handleCopySteps(steps: SuggestedResolutionStep[]) {
+    if (!steps || steps.length === 0) {
+      return;
+    }
+
+    const text = steps
+      .map(
+        (s) =>
+          `${s.stepNumber}. ${s.action}\n   Reason: ${s.reason}${
+            s.evidenceIncidentNumbers && s.evidenceIncidentNumbers.length > 0
+              ? `\n   Evidence: ${s.evidenceIncidentNumbers.join(", ")}`
+              : ""
+          }`
+      )
+      .join("\n\n");
+
+    void navigator.clipboard.writeText(text);
+    setCopiedSteps(true);
+    setTimeout(() => setCopiedSteps(false), 2500);
   }
 
   const statusActions = useMemo(() => {
@@ -2269,6 +2402,227 @@ export default function IncidentDetailsPage() {
                       );
                     })()}
                   </section>
+
+                  {/* ── AI Resolution Assistant Panel (Phase 2) ── */}
+                  {user && incident && canAccessResolutionAssistant(user, incident) && (
+                    <section
+                      className="detail-card detail-card-wide ai-panel ai-resolution-panel"
+                      id="ai-resolution-assistant-card"
+                    >
+                      <div className="ai-panel-header">
+                        <div className="ai-panel-title">
+                          <span className="ai-panel-icon" aria-hidden="true">
+                            🔍
+                          </span>
+                          <div>
+                            <h2>AI Resolution Assistant</h2>
+                            <p className="ai-panel-subtitle">
+                              Evidence-based decision support from previously resolved ResolveAI incidents.
+                            </p>
+                          </div>
+                        </div>
+
+                        {canGenerateResolutionAssistant(user, incident) && (
+                          <button
+                            id="run-ai-resolution-btn"
+                            type="button"
+                            className="ai-run-button"
+                            disabled={runningResolutionAssistant || resolutionLoading}
+                            onClick={() => void handleRunResolutionAssistant()}
+                          >
+                            {runningResolutionAssistant
+                              ? "Analyzing Evidence…"
+                              : resolutionAnalyses.length > 0
+                                ? "Refresh Assistance"
+                                : "Generate Resolution Assistance"}
+                          </button>
+                        )}
+                      </div>
+
+                      {resolutionNotice && (
+                        <div
+                          className={`inline-notice ${resolutionNotice.tone}`}
+                          role="status"
+                        >
+                          {resolutionNotice.message}
+                        </div>
+                      )}
+
+                      {runningResolutionAssistant && (
+                        <div className="ai-running">
+                          <span className="ai-spinner" aria-hidden="true" />
+                          Searching historical resolutions and synthesizing evidence-based recommendations…
+                        </div>
+                      )}
+
+                      {!runningResolutionAssistant && resolutionLoading && (
+                        <div className="ai-empty">Loading resolution assistance history…</div>
+                      )}
+
+                      {!runningResolutionAssistant && !resolutionLoading && resolutionAnalyses.length === 0 && (
+                        <div className="ai-empty">
+                          No resolution assistance generated yet.
+                          {canGenerateResolutionAssistant(user, incident)
+                            ? " Click \"Generate Resolution Assistance\" to find similar resolved incidents and recommended next steps."
+                            : ""}
+                        </div>
+                      )}
+
+                      {!runningResolutionAssistant && resolutionAnalyses.length > 0 && (() => {
+                        const latest = resolutionAnalyses[0];
+                        return (
+                          <div className="ai-resolution-content">
+                            {/* Current Situation & Likely Issue */}
+                            <div className="ai-resolution-summary-grid">
+                              <div className="ai-resolution-block">
+                                <h3 className="ai-resolution-heading">Current Situation</h3>
+                                <p className="ai-resolution-text">{latest.summary}</p>
+                              </div>
+
+                              <div className="ai-resolution-block">
+                                <div className="ai-likely-issue-header">
+                                  <h3 className="ai-resolution-heading">Likely Issue</h3>
+                                  <span className={`badge badge-confidence confidence-${latest.confidence.toLowerCase()}`}>
+                                    {latest.confidence} Confidence
+                                  </span>
+                                </div>
+                                <p className="ai-resolution-text">{latest.likelyIssue}</p>
+                              </div>
+                            </div>
+
+                            {/* Suggested Troubleshooting Steps */}
+                            <div className="ai-section ai-steps-section">
+                              <div className="ai-section-title-row">
+                                <h3 className="ai-section-heading">Suggested Next Steps</h3>
+                                <button
+                                  id="copy-suggested-steps-btn"
+                                  type="button"
+                                  className="secondary-button copy-steps-button"
+                                  onClick={() => handleCopySteps(latest.suggestedSteps)}
+                                >
+                                  {copiedSteps ? "✓ Copied" : "Copy Steps"}
+                                </button>
+                              </div>
+
+                              <ol className="ai-resolution-steps-list">
+                                {latest.suggestedSteps.map((step) => (
+                                  <li key={step.stepNumber} className="ai-resolution-step-item">
+                                    <div className="step-action-row">
+                                      <span className="step-number">{step.stepNumber}</span>
+                                      <div className="step-details">
+                                        <p className="step-action">{step.action}</p>
+                                        {step.reason && (
+                                          <p className="step-reason">{step.reason}</p>
+                                        )}
+                                        {step.evidenceIncidentNumbers && step.evidenceIncidentNumbers.length > 0 && (
+                                          <div className="step-evidence-tags">
+                                            <span className="evidence-tag-label">Evidence:</span>
+                                            {step.evidenceIncidentNumbers.map((num) => (
+                                              <span key={num} className="evidence-pill">
+                                                {num}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+
+                            {/* Similar Resolved Incidents */}
+                            <div className="ai-section ai-evidence-section">
+                              <h3 className="ai-section-heading">
+                                Similar Resolved Incidents
+                                {latest.evidence.length > 0 && ` (${latest.evidence.length})`}
+                              </h3>
+
+                              {latest.evidence.length === 0 ? (
+                                <div className="ai-no-evidence-callout">
+                                  <p>
+                                    <strong>No sufficiently similar resolved incidents were found in ResolveAI history.</strong>
+                                  </p>
+                                  <p className="muted-copy">
+                                    The suggested next steps above represent general diagnostic guidance, not patterns from historical incident resolutions.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="ai-evidence-cards">
+                                  {latest.evidence.map((evidenceItem) => (
+                                    <article key={evidenceItem.incidentId} className="ai-evidence-card">
+                                      <div className="evidence-card-header">
+                                        <div className="evidence-card-title-group">
+                                          <span className="evidence-incident-number">
+                                            {evidenceItem.incidentNumber}
+                                          </span>
+                                          <h4 className="evidence-title">{evidenceItem.title}</h4>
+                                        </div>
+                                        <div className="evidence-badges">
+                                          <span className="badge badge-category">
+                                            {evidenceItem.category}
+                                          </span>
+                                          <span className={`badge match-${evidenceItem.matchStrength.toLowerCase()}`}>
+                                            Match: {evidenceItem.matchStrength}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      <div className="evidence-card-body">
+                                        <div className="evidence-field">
+                                          <span className="evidence-field-label">Why similar:</span>
+                                          <p className="evidence-field-value">{evidenceItem.reasonForMatch}</p>
+                                        </div>
+
+                                        <div className="evidence-field">
+                                          <span className="evidence-field-label">Successful resolution:</span>
+                                          <p className="evidence-field-value resolution-excerpt">
+                                            "{evidenceItem.resolutionExcerpt}"
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </article>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Caveats / Decision Support Callout */}
+                            <div className="ai-disclaimer ai-resolution-caveat" role="note">
+                              <strong>Decision Support Only:</strong> {latest.caveats}
+                            </div>
+
+                            {/* Analysis History */}
+                            {resolutionAnalyses.length > 1 && (
+                              <details className="ai-history">
+                                <summary className="ai-history-toggle">
+                                  Resolution assistance history ({resolutionAnalyses.length - 1} older
+                                  {resolutionAnalyses.length - 1 === 1 ? " run" : " runs"})
+                                </summary>
+                                <ol className="ai-history-list">
+                                  {resolutionAnalyses.slice(1).map((hist) => (
+                                    <li key={hist.id} className="ai-history-item">
+                                      <div className="ai-history-meta">
+                                        <span>{formatDate(hist.createdAt)}</span>
+                                        <span>{hist.provider} / {hist.model}</span>
+                                        <span className={`badge match-${hist.confidence.toLowerCase()}`}>
+                                          {hist.confidence}
+                                        </span>
+                                      </div>
+                                      <div className="ai-history-row">
+                                        <span>Likely Issue: <strong>{hist.likelyIssue}</strong></span>
+                                        <span>Similar Evidence: <strong>{hist.evidence.length} incidents</strong></span>
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ol>
+                              </details>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </section>
+                  )}
                 </div>
               </>
             )}

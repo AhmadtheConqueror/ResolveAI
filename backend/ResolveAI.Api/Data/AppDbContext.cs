@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<Incident> Incidents => Set<Incident>();
     public DbSet<IncidentComment> IncidentComments => Set<IncidentComment>();
     public DbSet<IncidentAIAnalysis> IncidentAIAnalyses => Set<IncidentAIAnalysis>();
+    public DbSet<IncidentAIResolutionAnalysis> IncidentAIResolutionAnalyses => Set<IncidentAIResolutionAnalysis>();
     public DbSet<IncidentAuditEvent> IncidentAuditEvents => Set<IncidentAuditEvent>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<ExternalNotificationDelivery> ExternalNotificationDeliveries => Set<ExternalNotificationDelivery>();
@@ -190,6 +191,60 @@ public class AppDbContext : DbContext
                 a.IncidentId,
                 a.CreatedAt
             });
+
+        // -------------------------
+        // Incident AI Resolution Analyses (Phase 2)
+        // -------------------------
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .Property(a => a.Provider)
+            .HasMaxLength(50);
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .Property(a => a.Model)
+            .HasMaxLength(120);
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .Property(a => a.Summary)
+            .HasMaxLength(2000);
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .Property(a => a.LikelyIssue)
+            .HasMaxLength(500);
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .Property(a => a.Confidence)
+            .HasMaxLength(30);
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .Property(a => a.Caveats)
+            .HasMaxLength(1000);
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .Property(a => a.PromptVersion)
+            .HasMaxLength(80);
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .HasOne(a => a.Incident)
+            .WithMany(i => i.AIResolutionAnalyses)
+            .HasForeignKey(a => a.IncidentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .HasOne(a => a.RequestedByUser)
+            .WithMany(u => u.RequestedAIResolutionAnalyses)
+            .HasForeignKey(a => a.RequestedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .HasIndex(a => new
+            {
+                a.IncidentId,
+                a.CreatedAt
+            });
+
+        modelBuilder.Entity<IncidentAIResolutionAnalysis>()
+            .HasIndex(a => a.RequestedByUserId);
 
         // -------------------------
         // Incident Audit Events
